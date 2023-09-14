@@ -1,0 +1,2072 @@
+# taboo.tcl
+################################################################################
+# Constant-time tabular data format, using TclOO and Tcl dictionaries.
+# Adds "table" datatype.
+
+# Copyright (C) 2023 Alex Baker, ambaker1@mtu.edu
+# All rights reserved. 
+
+# See the file "LICENSE" in the top level directory for information on usage, 
+# redistribution, and for a DISCLAIMER OF ALL WARRANTIES.
+################################################################################
+
+package require vutil @VUTIL_VERSION@; # For object variable framework
+package require ndlist @NDLIST_VERSION@; # For indexing
+
+# Create namespace
+namespace eval ::taboo {}
+
+# Definition of the table class and its methods:
+# Method        # Description
+################################################################################
+# add           # Add keys/fields to table
+# cget          # Get column of data
+# cid           # Get column index given field
+# clean         # Clean table of keys/fields with no data
+# clear         # Clear table data, keeping field names
+# cmove         # Move column
+# cset          # Set an entire column
+# cswap         # Swap columns
+# data          # Get dictionary-style data of table
+# define        # Define table properties
+# exists        # Check if keys/fields/values exist
+# expr          # Perform column operation on table
+# fedit         # Create field with expr.
+# field         # Get field for given column index
+# fieldname     # Get fieldname
+# fields        # Get list of fields given column index and glob patterns 
+# filter        # Filter table given expr
+# find          # DEPRECIATED. Get row and column indices given key/field
+# get           # Get single values from table
+# height        # Get height of table (number of keys)
+# insert        # Insert keys/fields into table
+# key           # Get key given row index
+# keyname       # Get keyname
+# keys          # Get list of keys given row index and glob patterns 
+# merge         # Merge table data into current table
+# mget          # Get matrix of data from table
+# mkkey         # Make a field the key
+# mset          # Set a matrix of data in table
+# properties    # Get table properties. Same as calling object without args
+# query         # Query keys that meet table expr.
+# remove        # Remove keys/fields from table
+# rename        # Rename keys/fields in table
+# rget          # Get row of data in table
+# rid           # Get row index given key
+# rmove         # Move rows
+# rset          # Set rows of data in table
+# rswap         # Swap rows in table
+# search        # Search for keys meeting lsearch criteria in table
+# set           # Set single values in table
+# shape         # Get shape of table
+# sort          # Sort table using lsort
+# transpose     # Transpose table
+# values        # Get table values
+# width         # Get width of table (number of fields)
+# wipe          # Wipe table (resets to fresh table)
+# with          # Loop through tabular data
+
+::vutil::type create table ::taboo::table {
+# Additional variables used in all methods
+variable keys keymap keyname fields fieldmap fieldname data
+
+# new table $refName <$option $value ...>
+# 
+# Modify to call define instead of "SetValue"
+
+constructor {refName args} {
+    my wipe
+    my define {*}$value
+    return
+}
+
+# SetValue --
+# 
+# Modify to wipe and call "define"
+
+method SetValue {value} {
+    my ValidateValue $value
+    my wipe
+    my define {*}$value
+    return [self]
+}
+
+# GetValue --
+#
+# Modify to call "properties"
+
+method GetValue {} {
+    return [my properties]
+}
+
+# ValidateValue --
+#
+# Validate input before overwriting table.
+
+method ValidateValue {value} {
+    if {![catch {dict size $value} size]} {
+        return -code error "table value must be dictionary"
+    }
+    if {$size != 5} {
+        return -code error "invalid table dictionary, wrong number of keys"
+    }
+    foreach key {data keys fields keyname fieldname} {
+        if {![dict exists $value $key]} {
+            return -code error "invalid table dictionary, missing \"$key\" key"
+        }
+    }
+    return
+}
+
+# my IsUniqueList --
+#
+# Private method for checking uniqueness of key/field inputs.
+#
+# Syntax:
+# my IsUniqueList $list
+#
+# Arguments:
+# list:             List to check for uniqueness
+
+method IsUniqueList {list} {
+    set map ""
+    foreach item $list {
+        if {[dict exists $map $item]} {
+            return 0
+        }
+        dict set map $item ""
+    }
+    return 1
+}
+    
+# $tblObj wipe --
+#
+# Reset table entirely to defaults
+
+method wipe {} {
+    my clear
+    set fields ""; # Ordered list of fields
+    set fieldmap ""; # Dictionary of fields and indices
+    set keyname key; # Name of keys (first column name)
+    set fieldname field; # Name of fields
+    return
+}
+
+# $tblObj clear --
+#
+# Clear out all data in table (keeps keyname/fieldname, and fields/fieldmap)
+
+method clear {} {
+    set data ""; # Double-nested dictionary of table data
+    set keys ""; # Ordered list of keys
+    set keymap ""; # dictionary of keys and indices
+    return
+}
+
+# Table property definition
+################################################################################
+
+# $tblObj define --
+# 
+# Define main table properties (everything that defines a table)
+# keys/fields must be unique
+# key-value input
+# 
+# Arguments:
+# option:       keyname, fieldname, keys, fields, or data
+# value:        corresponding values. For keys and fields, ignores dupes.
+
+method define {args} {
+    # Check arity
+    if {[llength $args] == 1} {
+        set args [lindex $args 0]
+    }
+    if {[llength $args]%2 == 1} {
+        ::errmsg::wrongNumArgs "[self] define name value ?name value ...?"
+    }
+    foreach {property value} $args {
+        # Fill in metakeys
+        switch $property {
+            keyname { 
+                if {[my exists field $value]} {
+                    return -code error "cannot set keyname, found in fields"
+                }
+                if {$value eq ""} {
+                    return -code error "keyname cannot be blank"
+                }
+                set keyname $value
+            }
+            fieldname {
+                if {[my exists key $value]} {
+                    return -code error "cannot set fieldname, found in keys"
+                }
+                if {$value eq ""} {
+                    return -code error "fieldname cannot be blank"
+                }
+                set fieldname $value
+            }
+            keys {
+                if {![my IsUniqueList $value]} {
+                    return -code error "keys must be unique"
+                }
+                # Redefine keys
+                set keys ""
+                set keymap ""
+                my add keys {*}$value
+                # Filter data
+                dict for {key rdict} $data {
+                    if {![my exists key $key]} {
+                        dict unset data $key
+                    }
+                }
+            }
+            fields {
+                if {![my IsUniqueList $value]} {
+                    return -code error "fields must be unique"
+                }
+                # Redefine fields
+                set fields ""
+                set fieldmap ""
+                my add fields {*}$value
+                # Filter data
+                dict for {key rdict} $data {
+                    dict for {field value} $rdict {
+                        if {![my exists field $field]} {
+                            dict unset data $key $field
+                        }
+                    }
+                }
+            }
+            data {
+                # Overwrite data (adds any new keys/fields as well)
+                foreach key $keys {
+                    dict set data $key ""
+                }
+                dict for {key rdict} $value {
+                    my set $key {*}$rdict
+                }
+            }
+            default {
+                return -code error \
+                        "unknown option \"$property\": want \"keyname\",\
+                        \"fieldname\", \"keys\", \"fields\", or \"data\""
+            }
+        }; # end switch
+    }; # end foreach property value
+    # Assign properties to object variable array.
+    set (value) [my properties]
+    return
+}
+
+# Table property access
+################################################################################
+
+# $tblObj properties --
+# 
+# Return a dictionary completely defining the table.
+
+method properties {} {
+    return [dict create keyname $keyname fieldname $fieldname keys $keys \
+            fields $fields data $data]
+}
+
+# $tblObj keyname --
+# 
+# Access keyname of table
+
+method keyname {} {
+    return $keyname
+}
+
+# $tblObj fieldname --
+# 
+# Access fieldname of table
+
+method fieldname {} {
+    return $fieldname
+}
+
+# $tblObj keys --
+# 
+# Access table keys with optional index and glob pattern
+#
+# Syntax:
+# $tblObj keys <$i> <$pattern>
+#
+# Arguments:
+# i:            ndlist index pattern. default ":"
+# pattern:      Optional, default *
+
+method keys {{i :} {pattern *}} {
+    set keyset $keys
+    # First use index pattern, then glob pattern
+    if {$i ne ":"} {
+        if {[string index $i end] eq "*"} {
+            return -code error "index flattening not allowed"
+        }
+        set keyset [::ndlist::nget $keyset $i]
+    }
+    if {$pattern ne "*"} {
+        set keyset [lsearch -inline -all $keyset $pattern]
+    }
+    return $keyset
+}
+
+# $tblObj fields --
+# 
+# Access table fields with optional index and glob pattern
+#
+# Syntax:
+# $tblObj fields <$j> <$pattern>
+# 
+# Arguments:
+# j:            ndlist index pattern. default ":"
+# pattern:      Optional, default *
+
+method fields {{j :} {pattern *}} {
+    set fieldset $fields
+    # First use index pattern, then glob pattern
+    if {$j ne ":"} {
+        if {[string index $j end] eq "*"} {
+            return -code error "index flattening not allowed"
+        }
+        set fieldset [::ndlist::nget $fieldset $j]
+    }
+    if {$pattern ne "*"} {
+        set fieldset [lsearch -inline -all $fieldset $pattern]
+    }
+    return $fieldset
+}
+
+
+# $tblObj key --
+# 
+# Return the key associated with row index
+# Can use negative indexing per the ndlist package
+#
+# Syntax:
+# $tblObj key $i
+#
+# Arguments:
+# i:        Row index
+
+method key {i} {
+    # Normalize input with ndlist package
+    set i [::ndlist::Index2Integer $i [llength $keys]]
+    if {$i >= [llength $keys]} {
+        return -code error "row index out of range"
+    }
+    lindex $keys $i
+}
+
+# $tblObj field --
+# 
+# Return the field associated with column index
+# Can use negative indexing per the ndlist package
+#
+# Syntax:
+# $tblObj field $j
+#
+# Arguments:
+# j:        Column index
+
+method field {j} {
+    # Normalize input with ndlist package
+    set j [::ndlist::Index2Integer $j [llength $fields]]
+    if {$j >= [llength $fields]} {
+        return -code error "column index out of range"
+    }
+    lindex $fields $j
+}
+
+# $tblObj data --
+#
+# Access unordered data of table. 
+#
+# Syntax:
+# $tblObj data
+# $tblObj data <-k> $key
+# $tblObj data -i $i
+#
+# Arguments:
+# key:          Key to get row data for
+# i:            Row index to get row data for
+
+method data {args} {
+    if {[llength $args] == 0} {
+        return $data
+    } elseif {[llength $args] == 1} {  
+        set key [lindex $args 0]
+        if {[my exists key $key]} {
+            return [dict get $data $key]
+        } else {
+            return -code error "key \"$key\" not found in table"
+        }
+    } elseif {[llength $args] == 2} {
+        # Switch for arity
+        switch [lindex $args 0] {
+            -k {
+                my data [lindex $args 1]
+            } 
+            -i {
+                my data [my key [lindex $args 1]]
+            }
+            default {
+                return -code error \
+                        "wrong # args: should be \"[self] data -i i\""
+            }
+        }
+    } else {
+        return -code error \
+                "wrong # args: should be \"[self] data ?key?\""
+    }
+}
+
+# Derived table properties
+################################################################################
+
+# $tblObj values --
+#
+# Get matrix of values (alias for mget with all keys and fields)
+
+method values {} {
+    my mget
+}
+
+# $tblObj shape --
+#
+# Get shape of table (number of keys and fields)
+#
+# Syntax:
+# $tblObj shape <$dim>
+#
+# Arguments:
+# dim:          0 for height, 1 for width, "" for list of height and width
+
+method shape {{dim ""}} {
+    switch $dim {
+        "" {
+            return [list [my height] [my width]]
+        }
+        0 {
+            return [my height]
+        }
+        1 {
+            return [my width]
+        }
+        default {
+            return -code error "dim must be blank, 0, or 1"
+        }
+    }
+}
+
+# $tblObj height --
+#
+# Number of keys in table
+
+method height {} {
+    llength $keys
+}
+
+# $tblObj width --
+#
+# Number of fields in table
+
+method width {} {
+    llength $fields
+}
+
+# $tblObj exists --
+#
+# Check if key/field or key/field pairing exists, using hashmaps
+#
+# Syntax:
+# $tblObj exists key $key
+# $tblObj exists field $field
+# $tblObj exists value $key $field
+# 
+# Arguments:
+# key:          Key to look up
+# field:        Field to look up
+
+method exists {type args} {
+    switch $type {
+        key { # Check if key exists
+            if {[llength $args] != 1} {
+                ::errmsg::wrongNumArgs "[self] exists key name"
+            }
+            return [dict exists $keymap [lindex $args 0]]
+        }
+        field { # Check if field exists
+            if {[llength $args] != 1} {
+                ::errmsg::wrongNumArgs "[self] exists field name"
+            }
+            return [dict exists $fieldmap [lindex $args 0]]
+        }
+        value { # Check if key/field pairing exists in data
+            if {[llength $args] != 2} {
+                ::errmsg::wrongNumArgs "[self] exists value key field"
+            }
+            return [dict exists $data {*}$args]
+        }
+        default {
+            ::errmsg::unknownOption $type {key field value}
+        }
+    }; # end switch type
+}
+
+# $tblObj rid --
+#
+# Get row index for key
+#
+# Syntax:
+# $tblObj rid $key
+#
+# Arguments:
+# key:          Key to look up
+
+method rid {key} {
+    if {[my exists key $key]} {
+        return [dict get $keymap $key]
+    } else {
+        return -code error "key \"$key\" not found in table"
+    }
+}
+
+# $tblObj cid --
+#
+# Get column index for field
+#
+# Syntax:
+# $tblObj cid $field
+#
+# Arguments:
+# field:        Field to look up
+
+method cid {field} {
+    if {[my exists field $field]} {
+        return [dict get $fieldmap $field]
+    } else {
+        return -code error "field \"$field\" not found in table"
+    }
+}
+
+
+# Table entry
+################################################################################
+
+# $tblObj set --
+#
+# Set single values in a table (single or dictionary form)
+# Allows for multiple value inputs for record-style entry
+#
+# Syntax:
+# $tblObj set $key $field $value <$field $value ...>; # odd number
+# $tblObj set -kf $key $field $value <$field $value ...>
+# $tblObj set -kj $key $j $value <$j $value ...>
+# $tblObj set -if $i $field $value <$field $value ...>
+# $tblObj set -ij $i $j $value <$j $value ...>
+# $tblObj set $i,$j $value <$i,$j $value ...>; # i-j combos
+#
+# Arguments:
+# key:          Row key
+# field:        Column field
+# i:            Row index
+# j:            Column index
+# value:        Value to set
+
+method set {args} {
+    # Check arity
+    if {[llength $args] == 0} {
+        # Default syntax
+        return -code error "wrong # args: should be \"[self] set key field\
+                value ?field value ...?\""
+    }
+    # Handle default case (odd number of arguments)
+    if {[llength $args] % 2 == 1} {
+        set args [lassign $args key]
+        # Add keys and fields
+        my add keys $key
+        my add fields {*}[dict keys $args]
+        # Add data
+        dict for {field value} $args {
+            # Handle blanks
+            if {$value eq ""} {
+                dict unset data $key $field
+            } else {
+                dict set data $key $field $value
+            }; # end if blank
+        }
+        return
+    }
+    # Handle special cases (even number of args)
+    switch [lindex $args 0] {
+        -kf { # Key, then field-value pairs
+            my set {*}[lrange $args 1 end]; # Default case
+        }
+        -kj { # Key, then j-value pairs
+            set key [lindex $args 1]
+            foreach {j value} [lrange $args 2 end] {
+                my set $key [my field $j] $value
+            }
+        }
+        -if { # i, then field-value pairs
+            my set [my key [lindex $args 1]] {*}[lrange $args 2 end]
+        }
+        -ij { # i, then j-value pairs
+            my set -kj [my key [lindex $args 1]] {*}[lrange $args 2 end]
+        }
+        default { # i,j value pairs
+            foreach {ij value} $args {
+                set ij [split $ij ,]
+                if {[llength $ij] != 2} {
+                    ::errmsg::wrongNumArgs "[self] set i,j value ?i,j value...?"
+                }
+                lassign $ij i j
+                my set [my key $i] [my field $j] $value
+            }
+        }
+    }
+    return
+}
+
+# $tblObj rset --
+#
+# Set entire row
+#
+# Syntax:
+# $tblObj rset <-k> $key $row
+# $tblObj rset -i $i $row
+#
+# Arguments:
+# key:          Key associated with row
+# i:            Row index
+# row:          List of values (length must match table width, or be scalar)
+
+method rset {args} {
+    # Switch for arity
+    if {[llength $args] == 2} {
+        lassign $args key row
+    } elseif {[llength $args] == 3} {
+        switch [lindex $args 0] {
+            -k { # Default case
+                lassign [lrange $args 1 end] key row
+            }
+            -i { # Row index case
+                lassign [lrange $args 1 end] i row
+                set key [my key $i]
+            }
+            default {
+                ::errmsg::wrongNumArgs "[self] rset -i i row"
+            }
+        }
+    } else {
+        ::errmsg::wrongNumArgs "[self] rset key row"
+    }
+    # Get input and target dimensions and check for error
+    set m0 [llength $fields]
+    set m1 [llength $row]
+    if {$m1 == 0} {
+        set type blank
+    } elseif {$m1 == 1} {
+        set value [lindex $row 0]
+        if {$value eq ""} {
+            set type blank
+        } else {
+            set type scalar
+        }
+    } elseif {$m1 == $m0} {
+        set type values
+    } else {
+        return -code error "inconsistent number of fields/columns"
+    }
+    
+    # Add key
+    my add keys $key
+    
+    # Switch for input type (blank, scalar, or values)
+    switch $type {
+        blank {
+            dict set data $key ""
+        }
+        scalar {
+            foreach field $fields {
+                dict set data $key $field $value
+            }; # end foreach field
+        }
+        values {
+            foreach value $row field $fields {
+                # Handle blanks
+                if {$value eq ""} {
+                    dict unset data $key $field
+                } else {
+                    dict set data $key $field $value
+                }; # end if blank
+            }; # end foreach value/field
+        }
+    }; # end switch input type
+        
+    return
+}
+
+# $tblObj cset --
+#
+# Set entire column
+#
+# Syntax:
+# $tblObj cset <-f> $field $column
+# $tblObj cset -j $j $column
+# 
+# Arguments:
+# field:        Field associated with column
+# j:            Index for column
+# column:       List of values (length must match height, or be scalar)
+
+method cset {args} {
+    # Switch for arity
+    if {[llength $args] == 2} {
+        lassign $args field column
+    } elseif {[llength $args] == 3} {
+        switch [lindex $args 0] {
+            -f { # Default case
+                lassign [lrange $args 1 end] field column
+            }
+            -j { # Column index case
+                lassign [lrange $args 1 end] j column
+                set field [my field $j]
+            }
+            default {
+                ::errmsg::wrongNumArgs "[self] cset -j j column"
+            }
+        }
+    } else {
+        ::errmsg::wrongNumArgs "[self] cset field column"
+    }
+    # Get source and input dimensions and get input type
+    set n0 [llength $keys]
+    set n1 [llength $column]
+    if {$n1 == 0} {
+        set type blank
+    } elseif {$n1 == 1} {
+        set value [lindex $column 0]
+        if {$value eq ""} {
+            set type blank
+        } else {
+            set type scalar
+        }
+    } elseif {$n1 == $n0} {
+        set type values
+    } else {
+        return -code error "inconsistent number of keys/rows"
+    }
+    
+    # Add to field list
+    my add fields $field
+    
+    # Switch for input type (blank, scalar, or column)
+    switch $type {
+        blank {
+            foreach key $keys {
+                dict unset data $key $field
+            }; # end foreach value/field
+        }
+        scalar {
+            foreach key $keys {
+                dict set data $key $field $value
+            }; # end foreach key
+        }
+        values {
+            foreach value $column key $keys {
+                # Handle blanks
+                if {$value eq ""} {
+                    dict unset data $key $field
+                } else {
+                    dict set data $key $field $value
+                }; # end if blank
+            }; # end foreach value/field
+        }
+    }; # end switch input type
+    
+    return
+}
+
+# $tblObj mset --
+#
+# Set range of table
+#
+# Syntax:
+# $tblObj mset <<-kf> $keys $fields> $matrix
+# $tblObj mset -kj $keys $j $matrix
+# $tblObj mset -if $i $fields $matrix
+# $tblObj mset -ij $i $j $matrix
+# $tblObj mset $i,$j $matrix
+#
+# Arguments:
+# keys:         Keys associated with rows (default all)
+# field:        Fields associated with columns (default all)
+# i:            Row indices
+# j:            Column indices
+# matrix:       Matrix of values (dimensions must match table or be scalar)
+
+method mset {args} {
+    # Initialize whether to flatten along row and column dimensions
+    set flattenRows 0
+    set flattenColumns 0
+    # Check arity
+    if {[llength $args] == 1} {
+        # All keys and fields
+        set matrix [lindex $args 0]
+        set keyset $keys
+        set fieldset $fields
+    } elseif {[llength $args] == 2} {
+        # i,j notation
+        lassign $args ij matrix
+        set ij [split $ij ,]
+        if {[llength $ij] != 2} {
+            ::errmsg::wrongNumArgs "[self] mset i,j matrix"
+        }
+        tailcall my mset -ij {*}$ij $matrix
+    } elseif {[llength $args] == 3} {
+        # Specified keys and fields
+        lassign $args keyset fieldset matrix
+    } elseif {[llength $args] == 4} {
+        switch [lindex $args 0] {
+            -kf { # Keys - fields input
+                lassign [lrange $args 1 end] keyset fieldset matrix
+            }
+            -kj { # Keys - column index input
+                lassign [lrange $args 1 end] keyset j matrix
+                # Check for "flatten" index syntax
+                if {[string index $j end] eq "*"} {
+                    set j [string range $j 0 end-1] 
+                    set flattenColumns 1
+                }
+                set fieldset [my fields $j]
+            }
+            -if { # Row index - fields input
+                lassign [lrange $args 1 end] i fieldset matrix
+                # Check for "flatten" index syntax
+                if {[string index $i end] eq "*"} {
+                    set i [string range $i 0 end-1] 
+                    set flattenRows 1
+                }
+                set keyset [my keys $i]
+            }
+            -ij { # Row index - column index input
+                lassign [lrange $args 1 end] i j matrix
+                # Check for "flatten" index syntax
+                if {[string index $i end] eq "*"} {
+                    set i [string range $i 0 end-1] 
+                    set flattenRows 1
+                }
+                if {[string index $j end] eq "*"} {
+                    set j [string range $j 0 end-1] 
+                    set flattenColumns 1
+                }
+                set keyset [my keys $i]
+                set fieldset [my fields $j]
+            }
+            default {
+                ::errmsg::wrongNumArgs "[self] mset -ij i j matrix"
+            }
+        }
+    } else {
+        ::errmsg::wrongNumArgs "[self] mset ?keys fields? matrix"
+    }
+    
+    # Prep input if flattening indices were specified
+    if {$flattenColumns} {
+        set matrix [lmap row $matrix {list $row}]
+    }
+    if {$flattenRows} {
+        set matrix [list $matrix]
+    }
+    
+    # Get source and input dimensions and get input type
+    set n0 [llength $keyset]
+    set m0 [llength $fieldset]
+    set n1 [llength $matrix]
+    set m1 [llength [lindex $matrix 0]]
+    if {$n1 == 0 && $m1 == 0} {
+        set type blank
+    } elseif {$n1 == 1 && $m1 == 1} {
+        set value [lindex $matrix 0 0]
+        if {$value eq ""} {
+            set type blank
+        } else {
+            set type scalar
+        }
+    } elseif {$n1 == $n0 && $m1 == $m0} {
+        set type values
+    } else {
+        return -code error "input must be 0x0, 1x1 or ${n0}x${m0}"
+    }
+ 
+    # Add to key/field lists
+    my add keys {*}$keyset
+    my add fields {*}$fieldset
+    
+    # Switch for input type (blank, scalar, or matrix)
+    switch $type {
+        blank {
+            foreach key $keyset {
+                foreach field $fieldset {
+                    dict unset data $key $field
+                }; # end foreach value/field
+            }; # end foreach row/key
+        }
+        scalar {
+            foreach key $keyset {
+                foreach field $fieldset {
+                    dict set data $key $field $value
+                }; # end foreach value/field
+            }; # end foreach row/key
+        }
+        values {
+            foreach row $matrix key $keyset {
+                foreach value $row field $fieldset {
+                    # Handle blanks
+                    if {$value eq ""} {
+                        dict unset data $key $field
+                    } else {
+                        dict set data $key $field $value
+                    }; # end if blank
+                }; # end foreach value/field
+            }; # end foreach row/key
+        }
+    }; # end switch input type
+
+    return
+}
+
+# Table access
+################################################################################
+
+# $tblObj get --
+# 
+# Get a value from a table
+# If a key/field pairing does not exist, returns blank.
+# Return error if a key or field does not exist
+#
+# Syntax:
+# $tblObj get <-kf> $key $field
+# $tblObj get -kj $key $j
+# $tblObj get -if $i $field
+# $tblObj get -ij $i $j
+# $tblObj get $i,$j
+#
+# Arguments:
+# key:          key to query (fieldname to return field)
+# field:        field to query (keyname to return key)
+# i:            Row index
+# j:            Column index
+
+method get {args} {
+    # Switch for arity
+    if {[llength $args] == 1} {
+        # i,j syntax
+        set ij [split [lindex $args 0] ,]
+        if {[llength $ij] != 2} {
+            ::errmsg::wrongNumArgs "[self] get i,j"
+        }
+        lassign $ij i j
+        set key [my key $i]
+        set field [my field $j]
+    } elseif {[llength $args] == 2} {
+        # key-field syntax
+        lassign $args key field
+    } elseif {[llength $args] == 3} {
+        # Option syntax
+        switch [lindex $args 0] {
+            -kf { # Key and field
+                lassign [lrange $args 1 end] key field
+            }
+            -kj { # Key and column index
+                lassign [lrange $args 1 end] key j
+                set field [my field $j]
+            }
+            -if { # Row index and field
+                lassign [lrange $args 1 end] i field
+                set key [my key $i]
+            }
+            -ij { # Row index and column index
+                lassign [lrange $args 1 end] i j
+                set key [my key $i]
+                set field [my field $j]
+            }
+            default {
+                # Prefer -ij 
+                ::errmsg::wrongNumArgs "[self] get -ij i j field"
+            }
+        }
+    } else {
+        # Prefer default case
+        ::errmsg::wrongNumArgs "[self] get key field"
+    }
+    # Check if key-field pairing exists
+    if {![my exists key $key]} {
+        return -code error "key \"$key\" not found in table"
+    }
+    if {![my exists field $field]} {
+        return -code error "field \"$field\" not found in table"
+    }
+    # Return value or blank if does not exist
+    if {[my exists value $key $field]} {
+        return [dict get $data $key $field]
+    } else {
+        return ""
+    } 
+}
+
+# $tblObj index --
+#
+# Get a value from a table using numbered indices
+# DEPRECIATED. WILL BE REMOVED IN VERSION 1.0
+#
+# Syntax:
+# $tblObj index $i $j
+# 
+# Arguments:
+# i:          row index
+# j:          column index
+
+method index {i j} {
+    my get [my key $i] [my field $j]
+}
+
+# $tblObj rget --
+#
+# Get a list of row values
+#
+# Syntax:
+# $tblObj rget $key
+# $tblObj rget -i $i
+#
+# Arguments:
+# key:          key to query
+# i:            row index
+
+method rget {args} {
+    # Switch for arity
+    if {[llength $args] == 1} {
+        set key [lindex $args 0]
+    } elseif {[llength $args] == 2} {
+        if {[lindex $args 0] eq "-i"} {
+            set key [my key [lindex $args 1]]
+        } else {
+            ::errmsg::wrongNumArgs "[self] rget -i i"
+        }
+    } else {
+        ::errmsg::wrongNumArgs "[self] rget key"
+    }
+    # Loop through all fields, and return vector
+    lmap field $fields {
+        my get $key $field
+    }
+}
+
+# $tblObj cget --
+#
+# Get a list of column values
+#
+# Syntax:
+# $tblObj cget $field
+# $tblObj cget -j $j
+#
+# Arguments:
+# field:        field to query
+# j:            column index
+
+method cget {args} {
+    # Switch for arity
+    if {[llength $args] == 1} {
+        set field [lindex $args 0]
+    } elseif {[llength $args] == 2} {
+        if {[lindex $args 0] eq "-j"} {
+            set field [my field [lindex $args 1]]
+        } else {
+            ::errmsg::wrongNumArgs "[self] cget -j j"
+        }
+    } else {
+        ::errmsg::wrongNumArgs "[self] cget field"
+    }
+    # Loop through all keys, and return vector
+    lmap key $keys {
+        my get $key $field
+    }
+}
+
+# $tblObj mget --
+#
+# Get a matrix of table values 
+#
+# Syntax:
+# $tblObj mget <<-kf> $keys $fields>
+# $tblObj mget -kj $keys $j
+# $tblObj mget -if $i $fields
+# $tblObj mget -ij $i $j
+# $tblObj mget $i,$j
+#
+# Arguments:
+# keys:         Keys to query (default all), fieldname for key column
+# fields:       Fields to query (default all), keyname for field header row
+# i:            Row indices
+# j:            Column indices
+
+method mget {args} {
+    # Initialize whether to flatten along row and column dimensions
+    set flattenRows 0
+    set flattenColumns 0
+    # Check arity
+    if {[llength $args] == 0} {
+        # All keys and fields
+        set keyset $keys
+        set fieldset $fields
+    } elseif {[llength $args] == 1} {
+        # i,j notation
+        set ij [split [lindex $args 0] ,]
+        if {[llength $ij] != 2} {
+            ::errmsg::wrongNumArgs "[self] mget i,j"
+        }
+        tailcall my mget -ij {*}$ij
+    } elseif {[llength $args] == 2} {
+        # Specified keys and fields
+        lassign $args keyset fieldset
+    } elseif {[llength $args] == 3} {
+        # Option syntax
+        switch [lindex $args 0] {
+            -kf {
+                lassign [lrange $args 1 end] keyset fieldset
+            }
+            -kj {
+                lassign [lrange $args 1 end] keyset j
+                # Check for "flatten" index syntax
+                if {[string index $j end] eq "*"} {
+                    set j [string range $j 0 end-1] 
+                    set flattenColumns 1
+                }
+                set fieldset [my fields $j]
+            }
+            -if {
+                lassign [lrange $args 1 end] i fieldset
+                # Check for "flatten" index syntax
+                if {[string index $i end] eq "*"} {
+                    set i [string range $i 0 end-1] 
+                    set flattenRows 1
+                }
+                set keyset [my keys $i]
+            }
+            -ij {
+                lassign [lrange $args 1 end] i j
+                # Check for "flatten" index syntax
+                if {[string index $i end] eq "*"} {
+                    set i [string range $i 0 end-1] 
+                    set flattenRows 1
+                }
+                if {[string index $j end] eq "*"} {
+                    set j [string range $j 0 end-1] 
+                    set flattenColumns 1
+                }
+                set keyset [my keys $i]
+                set fieldset [my fields $j]
+            }
+            default {
+                ::errmsg::wrongNumArgs "[self] mget -ij i j"
+            }
+        }
+    } else {
+        ::errmsg::wrongNumArgs "[self] mget ?keys fields?"
+    }
+    # Get values
+    set matrix [lmap key $keyset {
+        lmap field $fieldset {
+            my get $key $field
+        }
+    }]
+    # Handle index flattening
+    if {$flattenColumns} {
+        set matrix [lmap row $matrix {concat {*}$row}]
+    }
+    if {$flattenRows} {
+        set matrix [concat {*}$matrix]
+    }
+    return $matrix
+}
+
+# $tblObj expr --
+#
+# Perform a field expression, return list of values
+# 
+# Arguments:
+# fieldExpr:    Tcl expression, but with @ symbol for fields
+
+method expr {fieldExpr} {
+    # Get mapping of fields in fieldExpr
+    set exp {@\w+|@{(\\\{|\\\}|[^\\}{]|\\\\)*}}
+    set fieldMap ""
+    foreach {match submatch} [regexp -inline -all $exp $fieldExpr] {
+        lappend fieldMap [join [string range $match 1 end]] $match
+    }
+    
+    # Check validity of fields in field expression
+    dict for {field match} $fieldMap {
+        if {![dict exists $fieldmap $field] && $field ne $keyname} {
+            return -code error "field \"$field\" not found in table"
+        }
+    }
+    
+    # Now, we know that the fields are valid, and we will loop through 
+    # the list of keys, and use "catch"
+    # Get values according to field expression
+    set values ""
+    foreach key $keys {
+        # Perform regular expression substitution
+        set subExpr $fieldExpr
+        set valid 1
+        foreach {field match} $fieldMap {
+            if {![my exists value $key $field]} {
+                if {$field eq $keyname} {
+                    set subExpr [regsub $match $subExpr "{$key}"]
+                    continue
+                }
+                # No data for this key/field combo. Skip.
+                set valid 0
+                break
+            }
+            set subExpr [regsub $match $subExpr "{[my get $key $field]}"]
+        }; # end foreach fieldmap pair
+        if {$valid} {
+            # Only add data if all required fields exist.
+            lappend values [uplevel 1 [list expr $subExpr]]
+        } else {
+            lappend values ""
+        }; # end if valid
+    }; # end foreach key
+    
+    # Return values created by field expression
+    return $values
+}
+
+# $tblObj fedit --
+#
+# Assign or edit a column based on field expression
+# 
+# Arguments:
+# field:        Field to edit or create
+# fieldExpr:    Tcl expression, but with @ symbol for fields
+
+method fedit {field fieldExpr} {
+    my cset $field [uplevel 1 [list [self] expr $fieldExpr]]
+    return
+}
+
+# $tblObj query --
+#
+# Get keys that match a specific criteria from field expression
+#
+# Arguments:
+# fieldExpr:        Field expression that results in a boolean value
+
+method query {fieldExpr} {
+    return [lmap bool [uplevel 1 [list [self] expr $fieldExpr]] key $keys {
+        if {$bool} {
+            set key
+        } else {
+            continue
+        }
+    }]
+}
+
+# $tblObj filter --
+# 
+# Reduce a table based on query results
+#
+# Arguments:
+# fieldExpr:        Field expression that results in a boolean value
+
+method filter {fieldExpr} {
+    my define keys [uplevel 1 [list [self] query $fieldExpr]]
+    return
+}
+
+# $tblObj search --
+#
+# Find key or keys that match a specific criteria, using lsearch.
+# If -inline is selected, filters the table instead.
+# 
+# Arguments:
+# args:         Selected lsearch options. Use -- to signal end of options.         
+# field:        Field to search in. If omitted, will search in keys.
+# value:        Value to search for.
+
+method search {args} {
+    # Interpret arguments
+    set options ""
+    set inline false
+    set remArgs ""
+    set optionCheck 1
+    foreach arg $args {
+        if {$optionCheck} {
+            # Check valid options
+            if {$arg in {
+                -exact
+                -glob
+                -regexp
+                -sorted
+                -all
+                -not
+                -ascii
+                -dictionary
+                -integer
+                -nocase
+                -real
+                -decreasing
+                -increasing
+                -bisect
+            }} then {
+                lappend options $arg
+                continue
+            } elseif {$arg eq "-inline"} {
+                set inline true
+                continue
+            } else {
+                set optionCheck 0
+                if {$arg eq {--}} {
+                    continue
+                }
+            }; # end check option arg
+        }; # end if checking for options
+        lappend remArgs $arg
+    }; # end foreach arg
+    
+    # Process value and field arguments
+    switch [llength $remArgs] {
+        1 { # Search keys
+            set value [lindex $remArgs 0]
+        }
+        2 { # Search a column
+            lassign $remArgs field value
+        }
+        default {
+            ::errmsg::wrongNumArgs \
+                    "[self] search ?-option value ...? field pattern"
+        }
+    }; # end switch arity of remaining
+
+    # Handle key search case
+    if {![info exists field]} {
+        # Filter by keys 
+        return [lsearch {*}$options -inline $keys $value]
+    }
+
+    # Filter by field values
+    if {![my exists field $field]} {
+        return -code error "field \"$field\" not found in table"
+    }
+    
+    # Check whether to include blanks or not
+    set includeBlanks [expr {
+        ![catch {lsearch {*}$options {{}} $value} result] && $result == 0
+    }]
+    
+    # Get search list
+    set searchList [lmap key $keys {
+        if {[dict exists $data $key $field]} {
+            list $key [dict get $data $key $field]
+        } elseif {$includeBlanks} {
+            list $key {}
+        } else {
+            continue
+        }
+    }]; # end lmap key
+    
+    # Get matches and corresponding keys
+    set matchList [lsearch {*}$options -index 1 -inline $searchList $value]
+    if {{-all} in $options} {
+        # Return key list
+        set keys [lsearch -all -inline -subindices -index 0 $matchList *]
+        if {$inline} {
+            my define keys $keys
+            return
+        }
+        return $keys
+    } else {
+        # Return key
+        set key [lindex $matchList 0]
+        if {$inline} {
+            my define keys [list $key]
+            return
+        }
+        return $key
+    }
+}
+
+# $tblObj sort --
+# 
+# Sort a table, using lsort
+#
+# Arguments:
+# options:      Selected lsort options. Use -- to signal end of options.
+# args:         Fields to sort by
+
+method sort {args} {
+    # Interpret arguments
+    set options ""
+    set fieldset ""
+    set optionCheck 1
+    foreach arg $args {
+        if {$optionCheck} {
+            # Check valid options
+            if {$arg in {
+                -ascii
+                -dictionary
+                -integer
+                -real
+                -increasing
+                -decreasing
+                -nocase
+            }} then {
+                lappend options $arg
+                continue
+            } else {
+                set optionCheck 0
+                if {$arg eq "--"} {
+                    continue
+                }
+            }
+        }
+        lappend fieldset $arg
+    }
+
+    # Switch for sort type (keys vs fields)
+    if {[llength $fieldset] == 0} {
+        # Sort by keys
+        set keys [lsort {*}$options $keys]
+    } else {
+        # Sort by field values
+        foreach field $fieldset {
+            # Check validity of field
+            if {![my exists field $field]} {
+                return -code error "field \"$field\" not found in table"
+            }
+            
+            # Get column and blanks
+            set cdict ""; # Column dictionary for existing values
+            set blanks ""; # Keys for blank values
+            foreach key $keys {
+                if {[my exists value $key $field]} {
+                    dict set cdict $key [dict get $data $key $field]
+                } else {
+                    lappend blanks $key
+                }
+            }
+            
+            # Sort valid keys by values, and then add blanks
+            set keys [concat [dict keys [lsort -stride 2 -index 1 \
+                    {*}$options $cdict]] $blanks]
+        }; # end foreach field
+    }; # end if number of fields
+    
+    # Update key map
+    set i 0
+    foreach key $keys {
+        dict set keymap $key $i
+        incr i
+    }
+
+    return
+}
+
+# $tblObj with --
+# 
+# Loops through table (row-wise), using dict with on the table data.
+# Missing data is represented by blanks. Setting a field to blank or 
+# unsetting the variable will unset the data.
+# Uses blank array to pass values
+
+# Syntax:
+# $tblObj with $body 
+# Example:
+#
+# Arguments:
+# body:         Body to evaluate
+
+# set T [tbl new -keys {x y}]
+# $T cset y {1 2 3}
+# $T with {set (x) [expr {$(y) + 2}]}
+
+method with {body} {
+    variable temp; # Temporary variable for dict with loop
+    foreach key $keys {
+        # Establish keyname variable (not upvar, cannot modify)
+        uplevel 1 [list set $keyname $key]
+        # Create temporary row dict with blanks
+        set temp [dict get $data $key]
+        foreach field $fields {
+            if {![dict exists $temp $field]} {
+                dict set temp $field ""
+            }
+        }
+        # Evaluate body, using dict with
+        uplevel 1 [list dict with [self namespace]::temp $body]
+        # Filter out blanks
+        dict set data $key [dict filter $temp value ?*]
+    }
+    # Return nothing
+    return
+}
+
+# $tblObj merge --
+# 
+# Add table data from other tables, merging the data. 
+# keyname and fieldname must be consistent to merge.
+# 
+# Arguments:
+# args:         Tables to merge into main table
+
+method merge {args} {
+    # Check compatibility
+    foreach tblObj $args {
+        if {$keyname ne [::$tblObj keyname]} {
+            return -code error "cannot merge tables - keyname conflict"
+        }
+        if {$fieldname ne [::$tblObj fieldname]} {
+            return -code error "cannot merge tables - fieldname conflict"
+        }
+    }
+    # Merge input tables
+    foreach tblObj $args {
+        # Add keys and fields
+        my add keys {*}[::$tblObj keys]
+        my add fields {*}[::$tblObj fields]
+        # Merge data
+        dict for {key rdict} [::$tblObj data] {
+            my set $key {*}$rdict
+        }
+    }
+    return
+}
+
+# Table manipulation
+################################################################################
+
+# $tblObj add --
+#
+# Add keys/fields to the table, appending to end, in "dict set" fashion.
+# Blank keys/fields are not allowed.
+# key must not conflict with fieldname
+# field must not conflict with keyname
+# Duplicates may be entered with no penalty.
+# 
+# Arguments:
+# type:         "keys" or "fields"
+# args:         Keys or fields
+
+method add {option args} {
+    switch $option {
+        keys {
+            foreach key $args {
+                # Ensure that input is valid
+                if {$key eq $fieldname} {
+                    return -code error "key cannot be fieldname"
+                }
+                if {$key eq ""} {
+                    return -code error "key cannot be blank"
+                }
+                # Check if key is new
+                if {![dict exists $keymap $key]} {
+                    dict set keymap $key [llength $keys]
+                    lappend keys $key
+                }
+                # Ensure that data entries exist
+                if {![dict exists $data $key]} {
+                    dict set data $key ""
+                }
+            }
+        }
+        fields {
+            foreach field $args {
+                if {$field eq $keyname} {
+                    return -code error "field cannot be keyname"
+                }
+                if {$field eq ""} {
+                    return -code error "field cannot be blank"
+                }
+                # Check if field is new
+                if {![dict exists $fieldmap $field]} {
+                    dict set fieldmap $field [llength $fields]
+                    lappend fields $field
+                }
+            }
+        }
+        default {
+            if {$option in {key -k}} {
+                my add keys {*}$args
+            } elseif {$option in {field -f}} {
+                my add fields {*}$args
+            } else {
+                ::errmsg::unknownOption $option {keys fields}
+            }
+        }
+    }
+    return
+}
+
+# $tblObj remove --
+#
+# Remove keys/fields if they exist. Handles duplicates just fine.
+#
+# Arguments:
+# type:         "keys" or "fields"
+# value:        Keys or fields
+
+method remove {type args} {
+    switch $type {
+        keys {
+            # Get keys to remove in order of index
+            set imap ""
+            foreach key $args {
+                if {![my exists key $key]} {
+                    continue
+                }
+                dict set imap $key [my rid $key]
+            }
+            # Switch for number of keys to remove
+            if {[dict size $imap] == 0} {
+                return
+            } elseif {[dict size $imap] > 1} {
+                set imap [lsort -integer -stride 2 -index 1 $imap]
+            }
+
+            # Remove from keys and data (k-trick for performance)
+            set count 0; # Count of removed values
+            dict for {key i} $imap {
+                incr i -$count; # Adjust for removed elements
+                set keys [lreplace $keys[set keys ""] $i $i]
+                dict unset keymap $key
+                dict unset data $key
+                incr count
+            }
+            
+            # Update keymap
+            set i [lindex $imap 1]; # minimum removed i
+            foreach key [lrange $keys $i end] {
+                dict set keymap $key $i
+                incr i
+            }
+        }
+        fields {
+            # Get fields to remove in order of index
+            set jmap ""
+            foreach field $args {
+                if {![my exists field $field]} {
+                    continue
+                }
+                dict set jmap $field [my cid $field]
+            }
+            
+            # Switch for number of keys to remove
+            if {[dict size $jmap] == 0} {
+                return
+            } elseif {[dict size $jmap] > 1} {
+                set jmap [lsort -integer -stride 2 -index 1 $jmap]
+            }   
+            
+            # Remove from fields and data (k-trick for performance)
+            set count 0; # Count of removed values
+            dict for {field j} $jmap {
+                incr j -$count; # Adjust for removed elements
+                set fields [lreplace $fields[set fields ""] $j $j]
+                dict unset fieldmap $field
+                dict for {key rdict} $data {
+                    dict unset data $key $field
+                }
+                incr count
+            }
+            
+            # Update fieldmap
+            set j [lindex $jmap 1]; # minimum removed j
+            foreach field [lrange $fields $j end] {
+                dict set fieldmap $field $j
+                incr j
+            }
+        }
+        default {
+            ::errmsg::unknownOption $type {keys fields}
+        }
+    }
+    return
+}
+
+# $tblObj insert --
+# 
+# Insert keys/fields (must be unique, and no duplicates)
+#
+# Arguments:
+# type:         "keys" or "fields"
+# index:        Row or column ID (with end-integer notation)
+# args:         Keys or fields
+
+method insert {type index args} {
+    switch $type {
+        keys {
+            # Ensure input keys are unique and new
+            if {![my IsUniqueList $args]} {
+                return -code error "cannot have duplicate key inputs"
+            }
+            foreach key $args {
+                if {[my exists key $key]} {
+                    return -code error "key \"$key\" already exists"
+                }
+            }
+            # Convert index input to integer
+            set i [:ndlist::Index2Integer $index [llength $keys]]
+            # Insert keys (using k-trick for performance)
+            set keys [linsert $keys[set keys ""] $i {*}$args]
+            # Update indices in key map
+            foreach key [lrange $keys $i end] {
+                dict set keymap $key $i
+                incr i
+            }
+            # Ensure that entries in data exist
+            foreach key $args {
+                if {![dict exists $data $key]} {
+                    dict set data $key ""
+                }
+            }
+        }
+        fields {
+            # Ensure input fields are unique and new
+            if {![my IsUniqueList $args]} {
+                return -code error "cannot have duplicate field inputs"
+            }
+            foreach field $args {
+                if {[my exists field $field]} {
+                    return -code error "field \"$field\" already exists"
+                }
+            }
+            # Convert index input to integer
+            set j [::ndlist::Index2Integer $index [llength $fields]]
+            # Insert fields (using k-trick for performance)
+            set fields [linsert $fields[set fields ""] $j {*}$args]
+            # Update indices in field map
+            foreach field [lrange $fields $j end] {
+                dict set fieldmap $field $j
+                incr j
+            }
+        }
+        default {
+            ::errmsg::unknownOption $type {keys fields}
+        }
+    }
+    return
+}
+  
+# $tblObj rename --
+#
+# Rename keys or fields in table
+#
+# Syntax:
+# $tblObj rename $type <$old> $new
+#
+# Arguments:
+# type:         "keys" or "fields"
+# old:          List of old keys/fields. Default existing keys/fields
+# new:          List of new keys/fields
+
+method rename {type args} {
+    # Check type
+    if {$type ni {keys fields}} {
+        ::errmsg::unknownOption $type {keys fields}
+    }
+    # Switch for arity
+    if {[llength $args] == 1} {
+        switch $type {
+            keys {set old $keys}
+            fields {set old $fields}
+        }
+        set new [lindex $args 0]
+        if {![my IsUniqueList $new]} {
+            return -code error "new $type must be unique"
+        }
+    } elseif {[llength $args] == 2} {
+        lassign $args old new
+        if {![my IsUniqueList $old] || ![my IsUniqueList $new]} {
+            return -code error "old and new $type must be unique"
+        }
+    } else {
+        ::errmsg::wrongNumArgs "[self] $type ?old? new"
+    }
+    # Check lengths
+    if {[llength $old] != [llength $new]} {
+        return -code error "old and new $type must match in length"
+    }
+    switch $type {
+        keys {
+            # Get old rows (checks for error)
+            set rows [lmap key $old {my rget $key}]
+            
+            # Update key list and map (requires two loops, incase of 
+            # intersection between old and new lists)
+            set iList ""
+            foreach oldKey $old newKey $new {
+                set i [my rid $oldKey]
+                lappend iList $i
+                lset keys $i $newKey
+                dict unset keymap $oldKey
+                dict unset data $oldKey
+            }
+            foreach newKey $new i $iList row $rows {
+                dict set keymap $newKey $i; # update in-place
+                my rset $newKey $row; # Re-add row
+            }
+        }
+        fields {
+            # Get old columns (checks for error)
+            set columns [lmap field $old {my cget $field}]
+            
+            # Update field list and map (requires two loops, incase of 
+            # intersection between old and new lists)
+            set jList ""
+            foreach oldField $old newField $new {
+                set j [my cid $oldField]
+                lappend jList $j
+                lset fields $j $newField
+                dict unset fieldmap $oldField
+                dict for {key rdict} $data {
+                    dict unset data $key $oldField
+                }
+            }
+            foreach newField $new j $jList column $columns {
+                dict set fieldmap $newField $j; # update in-place
+                my cset $newField $column; # Re-add column
+            }
+        }
+    }
+    return
+}     
+
+# $tblObj mkkey --
+# 
+# Make a field the key. Field must be full and unique.
+#
+# Syntax:
+# $tblObj mkkey $field
+# 
+# Arguments:
+# field:            Field to swap with key.
+
+method mkkey {field} {
+    # Check validity of transfer
+    if {[my exists field $keyname]} {
+        return -code error "keyname conflict with fields"
+    }
+    if {![my exists field $field]} {
+        return -code error "field \"$field\" not found in table"
+    }
+    # Make changes to a table copy
+    set tblCopy [my copy]
+    $tblCopy remove fields $field; # Remove field (also removes data)
+    $tblCopy define keyname $field; # Redefine keyname
+    $tblCopy rename keys [my cget $field]; # Rename keys
+    $tblCopy cset $keyname $keys; # Add field for original keys
+    # Redefine current table
+    my wipe
+    my define [$tblCopy]
+    $tblCopy destroy
+    return
+}
+
+# $tblObj rmove --
+#
+# Move row to a specific row index
+#
+# Syntax:
+# $tblObj rmove $key $i
+# 
+# Arguments:
+# key:      Key to move
+# i:        Row index to move to.
+
+method rmove {key i} {
+    # Get initial and final row indices
+    set i1 [my rid $key]
+    set i2 [my rid [my key $i]]
+    # Switch for move type
+    if {$i1 < $i2} {
+        # Target index is beyond source
+        set keys [concat [lrange $keys 0 $i1-1] [lrange $keys $i1+1 $i2] \
+                [list $key] [lrange $keys $i2+1 end]]
+        set i $i1
+    } elseif {$i1 > $i2} {
+        # Target index is below source
+        set keys [concat [lrange $keys 0 $i2-1] [list $key] \
+                [lrange $keys $i2 $i1-1] [lrange $keys $i1+1 end]]
+        set i $i2
+    } else {
+        # Trivial case
+        return
+    }
+    # Update keymap
+    foreach key [lrange $keys $i end] {
+        dict set keymap $key $i
+        incr i
+    }
+    return
+}
+
+# $tblObj cmove --
+#
+# Move column to a specific column index
+#
+# Syntax:
+# $tblObj cmove $field $j
+# 
+# Arguments:
+# field:    Field to move
+# j:        Column index to move to.
+
+method cmove {field j} {
+    # Get source index, checking validity of field
+    set j1 [my cid $field]
+    set j2 [my cid [my field $j]]
+    # Switch for move type
+    if {$j1 < $j2} {
+        # Target index is beyond source
+        set fields [concat [lrange $fields 0 $j1-1] \
+                [lrange $fields $j1+1 $j2] [list $field] \
+                [lrange $fields $j2+1 end]]
+        set j $j1
+    } elseif {$j1 > $j2} {
+        # Target index is below source
+        set fields [concat [lrange $fields 0 $j2-1] [list $field] \
+                [lrange $fields $j2 $j1-1] [lrange $fields $j1+1 end]]
+        set j $j2
+    } else {
+        # Trivial case
+        return
+    }
+    # Update fieldmap
+    foreach field [lrange $fields $j end] {
+        dict set fieldmap $field $j
+        incr j
+    }
+    return
+}
+
+# $tblObj rswap --
+#
+# Swap rows
+#
+# Syntax:
+# $tblObj rswap $key1 $key2
+#
+# Arguments:
+# key1:         Key 1
+# key2:         Key 2
+
+method rswap {key1 key2} {
+    # Check existence of keys
+    foreach key [list $key1 $key2] {
+        if {![dict exists $keymap $key]} {
+            return -code error "key \"$key\" not found in table"
+        }
+    }
+    # Get row IDs
+    set rid1 [dict get $keymap $key1]
+    set rid2 [dict get $keymap $key2]
+    # Update key list and map
+    lset keys $rid2 $key1
+    lset keys $rid1 $key2
+    dict set keymap $key1 $rid2
+    dict set keymap $key2 $rid1
+    return
+}
+
+# $tblObj cswap --
+#
+# Swap columns
+#
+# Syntax:
+# $tblObj cswap $field1 $field2
+#
+# Arguments:
+# field1:           Field 1
+# field2:           Field 2
+
+method cswap {field1 field2} {
+    # Check existence of fields
+    foreach field [list $field1 $field2] {
+        if {![dict exists $fieldmap $field]} {
+            return -code error "field \"$field\" not found in table"
+        }
+    }
+    # Get column IDs
+    set cid1 [dict get $fieldmap $field1]
+    set cid2 [dict get $fieldmap $field2]
+    # Update field list and map
+    lset fields $cid2 $field1
+    lset fields $cid1 $field2
+    dict set fieldmap $field1 $cid2
+    dict set fieldmap $field2 $cid1
+    return
+}
+
+# $tblObj transpose --
+# 
+# Transpose a table
+
+method transpose {} {
+    # Initialize transpose data
+    foreach field $fields {
+        dict set transpose $field ""
+    }
+    # Swap keys/fields
+    lassign [list $keyname $fieldname] fieldname keyname
+    lassign [list $keys $fields] fields keys
+    lassign [list $keymap $fieldmap] fieldmap keymap
+    # Transpose data
+    dict for {key rdict} $data {
+        dict for {field value} $rdict {
+            dict set transpose $field $key $value
+        }
+    }
+    set data $transpose
+    return
+}    
+
+# $tblObj clean --
+#
+# Clear keys and fields that don't exist in data
+
+method clean {} {
+    # Remove blank keys
+    set blankKeys ""
+    foreach key $keys {
+        if {[dict size [dict get $data $key]] == 0} {
+            lappend blankKeys $key
+        }
+    }
+    my remove keys {*}$blankKeys
+    # Remove blank fields
+    set blankFields ""
+    foreach field $fields {
+        set isBlank 1
+        dict for {key rdict} $data {
+            if {[dict exists $rdict $field]} {
+                set isBlank 0
+                break
+            }
+        }
+        if {$isBlank} {
+            lappend blankFields $field
+        }
+    }
+    my remove fields {*}$blankFields
+    return
+}
+}; # end class definition
+
+
+# Finally, provide the package
+package provide taboo @VERSION@
