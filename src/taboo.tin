@@ -74,9 +74,9 @@ variable keys keymap keyname fields fieldmap fieldname data
 # Modify to call define instead of "SetValue"
 
 constructor {refName args} {
+    next $refName
     my wipe
-    my define {*}$value
-    return
+    my define {*}$args
 }
 
 # SetValue --
@@ -99,6 +99,16 @@ method SetObject {objName} {
     my wipe
     my define {*}$(value)
     return [self]
+}
+
+# UpdateFields --
+# 
+# Modify to update the value and shape fields
+
+method UpdateFields {} {
+    set (value) [my properties]
+    set (shape) [my shape]
+    next
 }
 
 # GetValue --
@@ -425,7 +435,7 @@ method data {args} {
 # Get matrix of values (alias for mget with all keys and fields)
 
 method values {{filler ""}} {
-    my mget $filler
+    my mget $keys $fields $filler
 }
 
 # $tblObj shape --
@@ -714,27 +724,14 @@ method cset {field column} {
 # Set range of table
 #
 # Syntax:
-# $tblObj mset <$keys $fields> $matrix
+# $tblObj mset $keys $fields $matrix
 #
 # Arguments:
-# keys:         Keys associated with rows (default all)
-# field:        Fields associated with columns (default all)
+# keys:         Keys associated with rows
+# field:        Fields associated with columns
 # matrix:       Matrix of values (dimensions must match table or be scalar)
 
-method mset {args} {
-    # Check arity
-    if {[llength $args] == 1} {
-        # All keys and fields
-        set matrix [lindex $args 0]
-        set keyset $keys
-        set fieldset $fields
-    } elseif {[llength $args] == 3} {
-        # Specified keys and fields
-        lassign $args keyset fieldset matrix
-    } else {
-        return -code error "wrong # args: should be\
-                \"[self] mset ?keys fields? matrix\""
-    }
+method mset {keyset fieldset matrix} {
     # Get source and input dimensions and get input type
     set n0 [llength $keyset]
     set m0 [llength $fieldset]
@@ -865,36 +862,14 @@ method cget {field {filler ""}} {
 # Get a matrix of table values 
 #
 # Syntax:
-# $tblObj mget <$keys $fields> <$filler>
+# $tblObj mget $keys $fields <$filler>
 #
 # Arguments:
-# keys:         Keys to query (default all), fieldname for key column
-# fields:       Fields to query (default all), keyname for field header row
+# keys:         Keys to query
+# fields:       Fields to query
 # filler:       filler for missing values (default "")
 
-method mget {args} {
-    # Check arity
-    if {[llength $args] == 0} {
-        # $tblObj mget
-        set keyset $keys
-        set fieldset $fields
-        set filler ""
-    } elseif {[llength $args] == 1} {
-        # tblObj mget $filler 
-        set keyset $keys
-        set fieldset $fields
-        set filler [lindex $args 0]
-    } elseif {[llength $args] == 2} {
-        # tblObj mget $keys $fields
-        lassign $args keyset fieldset
-        set filler ""
-    } elseif {[llength $args] == 3} {
-        # tblObj mget $keys $fields $filler
-        lassign $args keyset fieldset filler
-    } else {
-        return -code error "wrong # args: should be\
-                \"[self] mget ?keys fields? ?filler?\""
-    }
+method mget {keyset fieldset {filler ""}} {
     # Loop through keys and fields and return matrix
     lmap key $keyset {
         lmap field $fieldset {
