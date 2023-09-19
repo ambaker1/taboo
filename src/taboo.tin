@@ -124,7 +124,7 @@ method GetValue {} {
 # Validate input before overwriting table.
 
 method ValidateValue {value} {
-    if {![catch {dict size $value} size]} {
+    if {[catch {dict size $value} size]} {
         return -code error "table value must be dictionary"
     }
     if {$size != 5} {
@@ -1065,7 +1065,11 @@ method search {args} {
         }]; # end lmap key
         # Get matches and corresponding keys
         set matchList [lsearch {*}$options -index 1 -inline $searchList $value]
-        set keyset [lsearch -all -inline -subindices -index 0 $matchList *]
+        if {{-all} in $options} {
+            set keyset [lsearch -all -inline -subindices -index 0 $matchList *]
+        } else {
+            set keyset [lrange $matchList 0 0]
+        }
     }
     # Filter table and return table name if inline
     if {$inline} {
@@ -1400,7 +1404,7 @@ method insert {type index args} {
                 }
             }
             # Convert index input to integer
-            set i [:ndlist::Index2Integer $index [llength $keys]]
+            set i [::ndlist::Index2Integer $index [llength $keys]]
             # Insert keys (using k-trick for performance)
             set keys [linsert $keys[set keys ""] $i {*}$args]
             # Update indices in key map

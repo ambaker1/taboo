@@ -37,7 +37,7 @@ test table_properties {
     # Verify that a table is created properly
 } -body {
     # Create test table (overwrite)
-    new table tblObj {
+    new table tblObj data {
         1 {x 3.44 y 7.11 z 8.67}
         2 {x 4.61 y 1.81 z 7.63}
         3 {x 8.25 y 7.56 z 3.84}
@@ -60,7 +60,7 @@ test copy_table_gc {
 } -result [$tblObj info]
 
 test trim_table {
-    # Use the "define" method to trim a table
+    # Use the "define" method to trim a table, and verify that it returns object
 } -body {
     [$tblCopy define keys {1 2} fields x]
 } -result {keyname key fieldname field keys {1 2} fields x data {1 {x 3.44} 2 {x 4.61}}}
@@ -77,17 +77,17 @@ test fieldname {
     $tblObj fieldname
 } -result {field}
 
-test key_field {
+test key_field_rid_cid {
     # Get key/field with row/column ID
 } -body {
-assert [$tblObj key 0] eq 1
-assert [$tblObj rid 1] == 0
-assert [$tblObj key end] eq 5
-assert [$tblObj rid 5] == 4
-assert [$tblObj field 0] eq x
-assert [$tblObj cid x] == 0
-assert [$tblObj field end] eq z
-assert [$tblObj cid z] == 2
+    assert [$tblObj key 0] eq 1
+    assert [$tblObj rid 1] == 0
+    assert [$tblObj key end] eq 5
+    assert [$tblObj rid 5] == 4
+    assert [$tblObj field 0] eq x
+    assert [$tblObj cid x] == 0
+    assert [$tblObj field end] eq z
+    assert [$tblObj cid z] == 2
 } -result {}
 
 test keys_fields {
@@ -201,10 +201,10 @@ test filler {
     # Get filler value when value is missing
 } -body {
     $tblObj --> tblCopy
-    $tblObj set 2 x ""; # delete
-    assert ![$tblObj exists value 2 x]
-    assert [$tblObj get 2 x] eq ""
-    $tblObj get 2 x 0.0; # with filler
+    $tblCopy set 2 x ""; # delete
+    assert ![$tblCopy exists value 2 x]
+    assert [$tblCopy get 2 x] eq ""
+    $tblCopy get 2 x 0.0; # with filler
 } -result 0.0
 
 test rget {
@@ -253,9 +253,9 @@ test cset_vector {
 test cset_delete {
     # Delete column
 } -body {
-$tblCopy cset x ""
-assert [$tblCopy cget x] eq {{} {} {} {} {}}
-assert [$tblCopy exists value 2 x] == 0
+    $tblCopy cset x ""
+    assert [$tblCopy cget x] eq {{} {} {} {} {}}
+    assert [$tblCopy exists value 2 x] == 0
 } -result {}
 
 test cset_scalar {
@@ -324,11 +324,11 @@ test add_with {
 test add_sort {
     # Add keys and sort
 } -body {
-# Add keys, and sort keys
-$tblCopy add keys 0 7 12 3 8 2 1
-assert [$tblCopy keys] eq {1 2 3 4 5 0 7 12 8}
-$tblCopy sort -integer 
-assert [$tblCopy keys] eq {0 1 2 3 4 5 7 8 12}
+    # Add keys, and sort keys
+    $tblCopy add keys 0 7 12 3 8 2 1
+    assert [$tblCopy keys] eq {1 2 3 4 5 0 7 12 8}
+    $tblCopy sort -integer 
+    assert [$tblCopy keys] eq {0 1 2 3 4 5 7 8 12}
 } -result {}
 
 test rmove_rswap {
@@ -347,63 +347,63 @@ test rmove_rswap {
 test cmove_cswap {
 # Move and swap columns
 } -body {
-$tblCopy cmove x end
-assert [$tblCopy fields] eq {y z x}
-$tblCopy cmove z end
-assert [$tblCopy fields] eq {y x z}
-$tblCopy cswap x y
-assert [$tblCopy fields] eq {x y z}
-assert [$tblCopy] eq [$tblObj]
+    $tblCopy cmove x end
+    assert [$tblCopy fields] eq {y z x}
+    $tblCopy cmove z end
+    assert [$tblCopy fields] eq {y x z}
+    $tblCopy cswap x y
+    assert [$tblCopy fields] eq {x y z}
+    assert [$tblCopy] eq [$tblObj]
 } -result {}
 
 test insert {
     # Insert keys/fields
 } -body {
-$tblCopy insert keys 2 foo bar
-assert [$tblCopy keys] eq {1 2 foo bar 3 4 5}
-$tblCopy insert fields end+1 foo bar
-assert [$tblCopy fields] eq {x y z foo bar}
-assert [catch {$tblCopy insert fields 0 foo}]; # cannot insert existing field
-assert [catch {$tblCopy insert fields 0 bah bah}]; # Cannot have duplicates
+    $tblCopy insert keys 2 foo bar
+    assert [$tblCopy keys] eq {1 2 foo bar 3 4 5}
+    $tblCopy insert fields end+1 foo bar
+    assert [$tblCopy fields] eq {x y z foo bar}
+    assert [catch {$tblCopy insert fields 0 foo}]; # cannot insert existing field
+    assert [catch {$tblCopy insert fields 0 bah bah}]; # Cannot have duplicates
 } -result {}
 
 test expr_fedit {
     # Validate field expressions
 } -body {
-# Expr and fedit
-$tblObj --> tblCopy
-assert [$tblCopy expr {@x*2 + $a}] eq {26.88 29.22 36.5 30.4 26.52}
-$tblCopy fedit q {@x*2 + $a}
-assert [$tblCopy cget q] eq {26.88 29.22 36.5 30.4 26.52}
-# Access to key values in "expr"
-assert [$tblCopy expr {@key}] eq [$tblCopy keys]
+    # Expr and fedit
+    $tblObj --> tblCopy
+    assert [$tblCopy expr {@x*2 + $a}] eq {26.88 29.22 36.5 30.4 26.52}
+    $tblCopy fedit q {@x*2 + $a}
+    assert [$tblCopy cget q] eq {26.88 29.22 36.5 30.4 26.52}
+    # Access to key values in "expr"
+    assert [$tblCopy expr {@key}] eq [$tblCopy keys]
 } -result {}
 
 test query {
     # Query keys matching a field expression
 } -body {
-$tblObj query {@x > 3.0 && @y > 7.0}
+    $tblObj query {@x > 3.0 && @y > 7.0}
 } -result {1 3 5}
 
 test filter {
     # Filter a table using query results
 } -body {
-$tblObj --> tblCopy
-$tblCopy filter {@x > 3.0 && @y > 7.0}
-assert [$tblCopy keys] eq {1 3 5}
+    $tblObj --> tblCopy
+    $tblCopy filter {@x > 3.0 && @y > 7.0}
+    assert [$tblCopy keys] eq {1 3 5}
 } -result {}
 
 test search_sort {
     # Searching and sorting
 } -body {
-$tblObj --> tblCopy
-assert [$tblCopy search -real x 8.25] == 3; # returns first matching key
-$tblCopy sort -real x; # sorts in-place
-assert [$tblCopy keys] eq {5 1 2 4 3}
-assert [$tblCopy cget x] eq {3.26 3.44 4.61 5.20 8.25}
-assert [$tblCopy search -sorted -bisect -real x 5.0] == 2
-$tblCopy search -inline -real x 8.25; # filters with search criteria
-assert [$tblCopy keys] == 3; # returns first matching key
+    $tblObj --> tblCopy
+    assert [$tblCopy search -real x 8.25] == 3; # returns first matching key
+    $tblCopy sort -real x; # sorts in-place
+    assert [$tblCopy keys] eq {5 1 2 4 3}
+    assert [$tblCopy cget x] eq {3.26 3.44 4.61 5.20 8.25}
+    assert [$tblCopy search -sorted -bisect -real x 5.0] == 2
+    $tblCopy search -inline -real x 8.25; # filters with search criteria
+    assert [$tblCopy keys] == 3; # returns first matching key
 } -result {}
 
 test merge {
@@ -420,15 +420,15 @@ test merge {
 test transpose {
     # Transpose the table
 } -body {
-$tblObj --> tblCopy
-$tblCopy transpose
-assert [$tblCopy keyname] eq [$tblObj fieldname]
-assert [$tblCopy fieldname] eq [$tblObj keyname]
-assert [$tblCopy keys] eq [$tblObj fields]
-assert [$tblCopy fields] eq [$tblObj keys]
-assert [transpose [$tblCopy values]] eq [$tblObj values]
-$tblCopy transpose
-assert [$tblCopy] eq [$tblObj]
+    $tblObj --> tblCopy
+    $tblCopy transpose
+    assert [$tblCopy keyname] eq [$tblObj fieldname]
+    assert [$tblCopy fieldname] eq [$tblObj keyname]
+    assert [$tblCopy keys] eq [$tblObj fields]
+    assert [$tblCopy fields] eq [$tblObj keys]
+    assert [::ndlist::ntranspose 2D [$tblCopy values]] eq [$tblObj values]
+    $tblCopy transpose
+    assert [$tblCopy] eq [$tblObj]
 } -result {}
 
 # Check number of failed tests
@@ -441,7 +441,6 @@ cleanupTests
 if {$nFailed > 0} {
     error "$nFailed tests failed"
 }
-exit
 
 # Tests passed, copy build files to main folder and install
 file copy -force {*}[glob -directory build *] [pwd]
