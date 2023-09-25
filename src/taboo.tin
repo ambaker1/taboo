@@ -60,7 +60,7 @@ namespace eval ::taboo {}
 
 ::vutil::type create table ::taboo::table {
 # Additional variables used in all methods
-variable "" keyname keys keymap fields fieldmap datamap
+variable keyname keys keymap fields fieldmap datamap
 
 # new table $refName <$value>
 # 
@@ -1475,8 +1475,7 @@ method mkkey {field} {
         return -code error "field \"$field\" not found in table"
     }
     # Make changes to a table copy
-    flytrap -verbose 1 -depth 6 {my --> tblCopy}
-    pause
+    my --> tblCopy
     $tblCopy remove fields $field; # Remove field (also removes data)
     $tblCopy keyname $field; # Redefine keyname
     $tblCopy rename keys [my cget $field]; # Rename keys
