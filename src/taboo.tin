@@ -1494,13 +1494,13 @@ method mkkey {field} {
 # $tblObj move key $key $i
 # $tblObj move field $field $j
 
-method move {type index} {
+method move {type args} {
     switch $type {
         key {
-            my MoveRow $index
+            my MoveRow {*}$args
         }
         field {
-            my MoveColumn $index
+            my MoveColumn {*}$args
         }
         default {
             return -code error "unknown option \"$type\": \
@@ -1523,7 +1523,6 @@ method move {type index} {
 # i:        Row index to move to.
 
 method MoveRow {key i} {
-    set key $value
     # Get initial and final row indices
     set i1 [my find key $key]
     set i2 [::ndlist::Index2Integer $i [my height]]
@@ -1598,10 +1597,10 @@ method MoveColumn {field j} {
 
 method swap {type args} {
     switch $type {
-        key {
+        keys {
             my SwapRows {*}$args
         }
-        field {
+        fields {
             my SwapColumns {*}$args
         }
         default {

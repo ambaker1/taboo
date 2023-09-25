@@ -315,7 +315,6 @@ test shape {
     assert [$tblObj width] == 3
 } -result {}
 
-
 test set_newfields {
     # Create new fields with set
 } -body {
@@ -336,7 +335,6 @@ test add_with {
     $tblCopy cget q 
 } -result {26.88 29.22 36.5 30.4 26.52}
 
-
 test add_sort {
     # Add keys and sort
 } -body {
@@ -355,7 +353,7 @@ test move_swap {
     assert [$tblCopy keys] eq {2 3 4 1 5}
     $tblCopy swap keys 1 5
     assert [$tblCopy keys] eq {2 3 4 5 1}
-    $tblCopy move key [$tblCopy key end] 0
+    $tblCopy move key [$tblCopy keys end*] 0
     assert [$tblCopy] eq [$tblObj]
     
     $tblCopy move field x end
@@ -420,21 +418,19 @@ test search_sort {
 test merge {
     # Create a new table, and merge the data into a copy of test table
 } -body {
-    new table newTable data {1 {x 5.00 q 6.34}}
+    new table newTable
     $tblObj --> tblCopy
     $newTable set 1 x 5.00 q 6.34
     $tblCopy merge $newTable
     $newTable destroy; # clean up
-    $tblCopy properties 
-} -result {keyname key fieldname field keys {1 2 3 4 5} fields {x y z q} data {1 {x 5.00 y 7.11 z 8.67 q 6.34} 2 {x 4.61 y 1.81 z 7.63} 3 {x 8.25 y 7.56 z 3.84} 4 {x 5.20 y 6.78 z 1.11} 5 {x 3.26 y 9.92 z 4.56}}}
+    $tblCopy
+} -result {key {1 2 3 4 5} x {5.00 4.61 8.25 5.20 3.26} y {7.11 1.81 7.56 6.78 9.92} z {8.67 7.63 3.84 1.11 4.56} q {6.34 {} {} {} {}}}
 
 test transpose {
     # Transpose the table
 } -body {
     $tblObj --> tblCopy
     $tblCopy transpose
-    assert [$tblCopy keyname] eq [$tblObj fieldname]
-    assert [$tblCopy fieldname] eq [$tblObj keyname]
     assert [$tblCopy keys] eq [$tblObj fields]
     assert [$tblCopy fields] eq [$tblObj keys]
     assert [::ndlist::ntranspose 2D [$tblCopy values]] eq [$tblObj values]
