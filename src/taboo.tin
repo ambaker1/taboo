@@ -524,17 +524,44 @@ method exists {type args} {
     }; # end switch type
 }
 
-# $tblObj rid --
+
+# $tblObj find --
+#
+# Find index of key/field. Calls RowID and ColumnID
+#
+# Syntax:
+# $tblObj find key $key
+# $tblObj find field $field
+#
+# Arguments:
+# key/field:        Key/field to look up
+
+method find {type args} {
+    switch $type {
+        key {
+            my RowID {*}$args
+        }
+        field {
+            my ColumnID {*}$args
+        }
+        default {
+            return -code error "unknown option \"$type\": want\
+                    \"key\" or \"field\""
+        }
+    }
+}
+
+# my RowID --
 #
 # Get row index for key
 #
 # Syntax:
-# $tblObj rid $key
+# my RowID $key
 #
 # Arguments:
 # key:          Key to look up
 
-method rid {key} {
+method RowID {key} {
     if {[my exists key $key]} {
         return [dict get $keymap $key]
     } else {
@@ -542,17 +569,17 @@ method rid {key} {
     }
 }
 
-# $tblObj cid --
+# my ColumnID --
 #
 # Get column index for field
 #
 # Syntax:
-# $tblObj cid $field
+# my ColumnID $field
 #
 # Arguments:
 # field:        Field to look up
 
-method cid {field} {
+method ColumnID {field} {
     if {[my exists field $field]} {
         return [dict get $fieldmap $field]
     } else {
@@ -1564,26 +1591,54 @@ method mkkey {field} {
     return [self]
 }
 
-# $tblObj rmove --
+# $tblObj move --
+#
+# Move row or column. Calls "MoveRow" and "MoveColumn"
+#
+# Syntax:
+# $tblObj move key $key $i
+# $tblObj move field $field $j
+
+method move {type args} {
+    switch $type {
+        key {
+            my MoveRow {*}$args
+        }
+        field {
+            my MoveColumn {*}$args
+        }
+        default {
+            return -code error "unknown option \"$type\": \
+                    should be \"key\" or \"field\"."
+        }
+    }
+    # Return object name
+    return [self]
+}
+
+# my MoveRow --
 #
 # Move row to a specific row index
 #
 # Syntax:
-# $tblObj rmove $key $i
+# my MoveRow $key $i
 # 
 # Arguments:
 # key:      Key to move
 # i:        Row index to move to.
 
-method rmove {key i} {
+method MoveRow {key i} {
+    set key $value
+    set i $index
     # Get initial and final row indices
     set i1 [my rid $key]
     set i2 [my rid [my key $i]]
     # Switch for move type
     if {$i1 < $i2} {
         # Target index is beyond source
-        set keys [concat [lrange $keys 0 $i1-1] [lrange $keys $i1+1 $i2] \
-                [list $key] [lrange $keys $i2+1 end]]
+        set keys [concat [lrange $keys 0 $i1-1] \
+                [lrange $keys $i1+1 $i2] [list $key] \
+                [lrange $keys $i2+1 end]]
         set i $i1
     } elseif {$i1 > $i2} {
         # Target index is below source
@@ -1599,22 +1654,20 @@ method rmove {key i} {
         dict set keymap $key $i
         incr i
     }
-    # Return object name
-    return [self]
 }
 
-# $tblObj cmove --
+# my MoveColumn --
 #
 # Move column to a specific column index
 #
 # Syntax:
-# $tblObj cmove $field $j
+# my MoveColumn $field $j
 # 
 # Arguments:
 # field:    Field to move
 # j:        Column index to move to.
 
-method cmove {field j} {
+method MoveColumn {field j} {
     # Get source index, checking validity of field
     set j1 [my cid $field]
     set j2 [my cid [my field $j]]
@@ -1639,16 +1692,39 @@ method cmove {field j} {
         dict set fieldmap $field $j
         incr j
     }
+}
+
+# $tblObj swap --
+#
+# Swap rows/columns. Calls "SwapRows" and "SwapColumns"
+#
+# Syntax:
+# $tblObj swap keys $key1 $key2 
+# $tblObj swap fields $field1 $field2 
+
+method swap {type args} {
+    switch $type {
+        key {
+            my SwapRows {*}$args
+        }
+        field {
+            my SwapColumns {*}$args
+        }
+        default {
+            return -code error "unknown option \"$type\": \
+                    should be \"keys\" or \"fields\"."
+        }
+    }
     # Return object name
     return [self]
 }
 
-# $tblObj rswap --
+# my SwapRows --
 #
 # Swap rows
 #
 # Syntax:
-# $tblObj rswap $key1 $key2
+# my SwapRows $key1 $key2
 #
 # Arguments:
 # key1:         Key 1
@@ -1673,12 +1749,12 @@ method rswap {key1 key2} {
     return [self]
 }
 
-# $tblObj cswap --
+# my SwapColumns --
 #
 # Swap columns
 #
 # Syntax:
-# $tblObj cswap $field1 $field2
+# my SwapColumns $field1 $field2
 #
 # Arguments:
 # field1:           Field 1
