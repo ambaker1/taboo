@@ -44,7 +44,6 @@ namespace import taboo::*
 # rset          # Set rows of data in table
 # search        # Search for keys meeting lsearch criteria in table
 # set           # Set single values in table
-# shape         # Get shape of table
 # sort          # Sort table using lsort
 # swap          # Swap rows/columns in table
 # transpose     # Transpose table
@@ -58,7 +57,7 @@ test new_table1 {
 } -body {
     ::taboo::table new tblObj
     $tblObj info
-} -result {exists 1 shape {0 0} type table value {key {}}}
+} -result {exists 1 height 0 type table value {key {}} width 0}
 
 test new_table2 {
     # Create a table with data
@@ -165,9 +164,11 @@ test clear_clean_wipe {
     # clear, clean, and wipe
     $tblCopy keyname foo
     $tblCopy clear
-    assert [$tblCopy shape] eq {0 3}
+    assert [$tblCopy height] == 0
+    assert [$tblCopy width] == 3
     $tblCopy clean
-    assert [$tblCopy shape] eq {0 0}
+    assert [$tblCopy height] == 0
+    assert [$tblCopy width] == 0
     assert [$tblCopy keyname] eq foo
     $tblCopy wipe
     assert [$tblCopy keyname] eq key
@@ -302,13 +303,9 @@ test mset {
     $tblCopy mget {1 2 3} {x z}
 } -result {{foo1 bar1} {foo2 bar2} {foo3 bar3}}
 
-test shape {
-    # Get shape of table (and height and width)
+test height_width {
+    # Get height and width
 } -body {
-    # shape
-    assert [$tblObj shape] eq {5 3}
-    assert [$tblObj shape 0] == 5
-    assert [$tblObj shape 1] == 3
     # height
     assert [$tblObj height] == 5
     # width
