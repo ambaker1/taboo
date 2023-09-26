@@ -16,7 +16,6 @@
 \begin{abstract}
 \begin{center}
 The ``taboo'' package implements an object-oriented tabular datatype in Tcl, using the object variable framework provided by the \textcolor{blue}{\href{https://github.com/ambaker1/vutil}{vutil}} package.
-This datatype is suitable for row-oriented two-dimensional data, and efficiently handles sparse tables. 
 \end{center}
 \end{abstract}
 \clearpage
@@ -25,38 +24,69 @@ This datatype is suitable for row-oriented two-dimensional data, and efficiently
 \section{Tabular Data Structure}
 This package provides an object-oriented tabular datatype in Tcl, building upon the type system framework provided by the \textcolor{blue}{\href{https://github.com/ambaker1/vutil}{vutil}} package.
 
-The string representation of this datatype is a five element dictionary with keys of ``keyname'', ``fieldname'', ``keys'', ``fields'', and ``data''. 
-The property ``keyname'' describes what the table keys represent, and the property ``fieldname'' describes what the table fields represent (this is not typically present in raw table formats such as CSV). 
-The property ``keys'' is an ordered list of all the row names of the table, and the property ``fields'' is an ordered list of all the field names of the table. 
-The property ``data'' stores the table values in an unordered, sparse, nested dictionary, with the first level data keys corresponding to the table keys, and the second level data keys corresponding to the table fields. 
-The conceptual layout of the five properties of a table is illustrated in the figure below.
+The string representation of this datatype is a dictionary, with keys representing the table header, and values representing the table columns.
+The values in the first column must be unique, and are called the table ``keys''. 
+Correspondingly, the first header entry is called the ``keyname''. 
+The remaining header entries are called the table ``fields'', and the remaining columns are the data stored in the table.
+The conceptual layout of the table is illustrated in the figure below.
 \vspace{\baselineskip}
 \FloatBarrier
 \begin{figure}[!htb]
     \centering
     \includegraphics{figures/table.pdf}
-    \caption{The five properties of a table}
+    \caption{Conceptual Representation of Tabular Data Structure}
     \label{fig:table_props}
 \end{figure}
+There is no restriction on the type of data that can be stored in a table, as shown in the example below, which has keyname ``key'', keys ``1 2 3'' and fields ``A B''.
+Note that missing values are represented by blanks. 
+\begin{example}{String representation of tabular data type}
+\begin{lstlisting}
+key {1 2 3} A {5.6 {} 2.22} B {{hello world} 4.5 foo}
+\end{lstlisting}
+\end{example}
+
 \clearpage
 \section{Creating Table Objects}
 This package provides the ``table'' type class, using the type system provided by the ``vutil'' package. 
 So, tables can be created with the ``vutil'' command \textit{new}, or directly with the \cmdlink{::taboo::table} class.
-Once created, table objects act as commands with an ensemble of subcommands, or methods. 
 \begin{syntax}
-\command{::taboo::table} new \$refName <\$arg...>
+\command{::taboo::table} new \$refName <\$value> \\
+::vutil::new table \$refName <\$value>
 \end{syntax}
 \begin{args}
 \$refName & Reference name to tie object to. \\
-\$arg... & Arguments to pass to \methodlink[0]{table}{define} method.
+\$value & Value of table. Default blank.
 \end{args}
 
-\begin{example}{Creating a table object with ``vutil'' \textit{new} command}
+Below is the example table used in the remainder of the documentation examples.
+Note that this format is also compatible with the string representation of Tcl arrays and dictionaries.
+\begin{example}{Example table}
 \begin{lstlisting}
-new table T
+::vutil::new table tableObj {
+    key {1 2 3 4 5} 
+    x {3.44 4.61 8.25 5.20 3.26}
+    y {7.11 1.81 7.56 6.78 9.92}
+    z {8.67 7.63 3.84 1.11 4.56}
+}
 \end{lstlisting}
 \end{example}
 
+\subsection{Wiping, Clearing, and Cleaning a Table}
+The method \methodlink[0]{table}{wipe} removes all data from a table object, so that its state is the same as a fresh table.
+The method \methodlink[0]{table}{clear} only removes the data and keys stored in the table, keeping the fields and other metadata.
+The method \methodlink[0]{table}{clean} only removes keys and fields that have no data.
+\begin{syntax}
+\method{table}{wipe}
+\end{syntax}
+\begin{syntax}
+\method{table}{clear}
+\end{syntax}
+\begin{syntax}
+\method{table}{clean}
+\end{syntax}
+
+
+\clearpage
 \subsection{Standard Methods}
 Because the table objects are object variables, they have the same basic methods provided by the ``vutil'' package.
 For more info on these methods, see the documentation for the ``vutil'' package.
@@ -66,7 +96,8 @@ For more info on these methods, see the documentation for the ``vutil'' package.
 \method{table}{=} \$value \\
 \method{table}{::=} \$body \\
 \method{table}{info} <\$field> \\
-\method{table}{print} <-nonewline> <\$channelID>
+\method{table}{print} <-nonewline> <\$channelID> \\
+\method{table}{destroy}
 \end{syntax}
 \begin{args}
 \$refName & Reference name to copy to. \\
@@ -78,114 +109,64 @@ For more info on these methods, see the documentation for the ``vutil'' package.
 \end{args}
 Note that the methods \texttt{.=} and \texttt{:=} are also available, but they are not recommended for tables.
 Also note that ``taboo'' tables are always initialized, so the ``exists'' field of the object variable will always be true.
-\clearpage
-\section{Table Properties}
-The method \methodlink[0]{table}{define} sets the property values of a table, filtering the data or adding keys and fields as necessary. For example, if the keys are defined to be a subset of the current fields, it will filter the data to only include the key subset. 
-Also, if the data is defined, all existing data will be wiped, and any new keys or fields will be added.
-\begin{syntax}
-\method{table}{define} <\$properties> <\$option \$value ...>
-\end{syntax}
-\begin{args}
-\$properties & Dictionary of properties. Mutually exclusive with option-value syntax. \\
-\$option & Property to set: ``keyname'', ``fieldname'', ``keys'', ``fields'' or ``data''. \\
-\$value & Value to set property to.
-\end{args}
-The remaining examples in this documentation will use the table as defined below:
-\begin{example}{Example Table}
-\begin{lstlisting}
-set tableObj [table new]
-$tableObj define data {
-    1 {x 3.44 y 7.11 z 8.67} 
-    2 {x 4.61 y 1.81 z 7.63}
-    3 {x 8.25 y 7.56 z 3.84}
-    4 {x 5.20 y 6.78 z 1.11}
-    5 {x 3.26 y 9.92 z 4.56}
-}
-\end{lstlisting}
-\end{example}
-\subsection{Wiping/Clearing a Table}
-The method \methodlink[0]{table}{wipe} removes all data from a table object, so that its state is the same as a fresh table.
-The method \methodlink[0]{table}{clear} only removes the data and keys stored in the table, keeping the fields and other metadata.
-\begin{syntax}
-\method{table}{wipe}
-\end{syntax}
-\begin{syntax}
-\method{table}{clear}
-\end{syntax}
 
-\clearpage
-\section{Table Property Query}
-The method \methodlink[0]{table}{properties} simply returns a dictionary of the table properties, as defined with \methodlink{table}{define}.
-Additionally, calling the table object without any arguments will return the table properties.
-\begin{syntax}
-\method{table}{properties} <\$option>
-\end{syntax}
-\begin{args}
-\$option & Property to get: ``keyname'', ``fieldname'', ``keys'', ``fields'' or ``data''. 
-\end{args}
-\begin{example}{Getting table properties (and trimming a table)}
+\begin{example}{Copying a table}
 \begin{lstlisting}
-puts [$tableObj properties]; # Automatically generates keys and fields
-$tableObj define keys {1 2} fields x; # Trims data
-puts [$tableObj properties]
-puts [$tableObj]
+$tableObj --> tableCopy
+$tableCopy print
 \end{lstlisting}
 \tcblower
 \begin{lstlisting}
-keyname key fieldname field keys {1 2 3 4 5} fields {x y z} data {1 {x 3.44 y 7.11 z 8.67} 2 {x 4.61 y 1.81 z 7.63} 3 {x 8.25 y 7.56 z 3.84} 4 {x 5.20 y 6.78 z 1.11} 5 {x 3.26 y 9.92 z 4.56}}
-keyname key fieldname field keys {1 2} fields x data {1 {x 3.44} 2 {x 4.61}}
-keyname key fieldname field keys {1 2} fields x data {1 {x 3.44} 2 {x 4.61}}
+key {1 2 3 4 5} x {3.44 4.61 8.25 5.20 3.26} y {7.11 1.81 7.56 6.78 9.92} z {8.67 7.63 3.84 1.11 4.56}
 \end{lstlisting}
 \end{example}
-
-\subsection{Get Keyname and Fieldname}
-The keyname and fieldname properties of a table can be accessed directly with their respective methods. 
-\begin{syntax}
-\method{table}{keyname}
-\end{syntax}
-\begin{syntax}
-\method{table}{fieldname}
-\end{syntax}
-
 \clearpage
-\subsection{Get Keys and Fields}
-The table keys and fields are ordered lists of the row and column names of the table. They can be queried with the methods \methodlink[0]{table}{keys} and \methodlink[0]{table}{fields}, respectively. In addition to just returning the lists of keys and fields, a pattern can be specified in the same style as the Tcl  \textit{string match} command.
+
+\subsection{Get/Set Keyname}
+The keyname of a table can be accessed or modified directly with their respective methods. 
 \begin{syntax}
-\method{table}{keys} <\$i> <\$pattern>
-\end{syntax}
-\begin{syntax}
-\method{table}{fields} <\$j> <\$pattern>
+\method{table}{keyname} <\$keyname>
 \end{syntax}
 \begin{args}
-\$pattern & String matching pattern. Default ``\texttt{*}'' returns all. \\
-\$i/\$j & Index arguments, using ``ndlist'' index notation. \\
-& Default ``\texttt{:}`` for all keys/fields. Does not allow ``\texttt{*}'' index notation.
+\$keyname & Header for table keys. Default blank to return current name.
 \end{args}
+\subsection{Get Keys and Fields}
+The table keys and fields are ordered lists of the row and column names of the table.
+They can be queried with the methods \methodlink[0]{table}{keys} and \methodlink[0]{table}{fields}, respectively. 
+\begin{syntax}
+\method{table}{keys} <\$index>
+\end{syntax}
+\begin{syntax}
+\method{table}{fields} <\$index>
+\end{syntax}
+\begin{args}
+\$index & Index arguments, using ``ndlist'' index notation. \\
+& Default ``\texttt{:}`` for all keys/fields.
+\end{args}
+\subsection{Table Dimensions}
+The number of keys can be queried with \methodlink{table}{height} and the number of fields can be queried with \methodlink{table}{width}. 
+These are also properties accessible with the standard method \methodlink[0]{table}{info}.
+Note that rows and columns with missing data will be counted.
+\begin{syntax}
+\method{table}{height}
+\end{syntax}
+\begin{syntax}
+\method{table}{width}
+\end{syntax}
 
-\begin{example}{Accessing table keys}
+\begin{example}{Accessing table keys and table dimensions}
 \begin{lstlisting}
 puts [$tableObj keys]
 puts [$tableObj keys 0:end-1]
+puts [$tableObj height]
 \end{lstlisting}
 \tcblower
 \begin{lstlisting}
 1 2 3 4 5
 1 2 3 4
+5
 \end{lstlisting}
 \end{example}
-\subsubsection{Get Single Key/Field at Row/Column Index}
-The table key or field corresponding with a row or column index, parsed with \cmdlink{::ndlist::Index2Integer}, can be queried with the methods \methodlink[0]{table}{key} and \methodlink[0]{table}{field}. 
-\begin{syntax}
-\method{table}{key} \$i
-\end{syntax}
-\begin{syntax}
-\method{table}{field} \$j
-\end{syntax}
-\begin{args}
-\$i & Row index. \\
-\$j & Column index.
-\end{args}
-
 \clearpage
 \subsection{Get Table Data (Dictionary Form)}
 The method \methodlink[0]{table}{data} returns the table data in unsorted dictionary form, where blanks are represented by missing dictionary entries. 
@@ -196,18 +177,6 @@ The method \methodlink[0]{table}{data} returns the table data in unsorted dictio
 \$key & Key to get row dictionary from (default returns all rows). 
 \end{args}
 
-\begin{example}{Getting table data}
-\begin{lstlisting}
-puts [$tableObj data]
-puts [$tableObj data 3]
-\end{lstlisting}
-\tcblower
-\begin{lstlisting}
-1 {x 3.44 y 7.11 z 8.67} 2 {x 4.61 y 1.81 z 7.63} 3 {x 8.25 y 7.56 z 3.84} 4 {x 5.20 y 6.78 z 1.11} 5 {x 3.26 y 9.92 z 4.56}
-x 8.25 y 7.56 z 3.84
-\end{lstlisting}
-\end{example}
-
 \subsection{Get Table Data (Matrix Form)}
 The method \methodlink[0]{table}{values} returns a matrix (list of rows) that represents the data in the table, where the rows correspond to the keys and the columns correspond to the fields. Missing entries are represented by blanks in the matrix unless specified otherwise.
 \begin{syntax}
@@ -216,51 +185,22 @@ The method \methodlink[0]{table}{values} returns a matrix (list of rows) that re
 \begin{args}
 \$filler & Filler for missing values, default blank.
 \end{args}
-\begin{example}{Getting table values}
+\begin{example}{Getting table data in dictionary and matrix form}
 \begin{lstlisting}
-puts [$tblObj values]
+puts [$tableObj data]
+puts [$tableObj data 3]
+puts [$tableObj values]
 \end{lstlisting}
 \tcblower
 \begin{lstlisting}
+1 {x 3.44 y 7.11 z 8.67} 2 {x 4.61 y 1.81 z 7.63} 3 {x 8.25 y 7.56 z 3.84} 4 {x 5.20 y 6.78 z 1.11} 5 {x 3.26 y 9.92 z 4.56}
+x 8.25 y 7.56 z 3.84
 {3.44 7.11 8.67} {4.61 1.81 7.63} {8.25 7.56 3.84} {5.20 6.78 1.11} {3.26 9.92 4.56}
 \end{lstlisting}
 \end{example}
 \clearpage
-\subsection{Get Table Dimensions}
-The dimensions of a table, as in the number of keys and fields, can be accessed with the method \methodlink[0]{table}{shape}. Note that rows and columns with missing data will be counted.
-\begin{syntax}
-\method{table}{shape} <\$dim>
-\end{syntax}
-\begin{args}
-\$dim & Dimension to take size along (default will return the number of rows and columns as a list) \\
-&\quad 0: Number of rows \\
-&\quad 1: Number of columns 
-\end{args}
-Alternatively, the number of rows can be queried with \methodlink{table}{height} and the number of columns can be queried with \methodlink{table}{width}. 
-These can also be accessed with the standard method \methodlink[0]{table}{info}.
-\begin{syntax}
-\method{table}{height}
-\end{syntax}
-\begin{syntax}
-\method{table}{width}
-\end{syntax}
-
-\begin{example}{Getting table dimensions}
-\begin{lstlisting}
-puts [$tableObj shape]
-puts [$tableObj height]
-puts [$tableObj width]
-\end{lstlisting}
-\tcblower
-\begin{lstlisting}
-5 3
-5
-3
-\end{lstlisting}
-\end{example}
-\clearpage
 \subsection{Check Existence of Table Keys/Fields}
-The existence of a table key, field, or combination of key/field can be queried with the method \methodlink[0]{table}{exists}. 
+The existence of a table key, field, or table value can be queried with the method \methodlink[0]{table}{exists}. 
 \begin{syntax}
 \method{table}{exists} key \$key \\
 \$tableObj exists field \$field \\
@@ -271,14 +211,12 @@ The existence of a table key, field, or combination of key/field can be queried 
 \$field & Field to check.
 \end{args}
 \subsection{Get Row/Column Indices}
-The row or column index of a table key or field can be queried with the methods \methodlink[0]{table}{rid} and \methodlink[0]{table}{cid}. \\
-If the key or field does not exist, returns -1.
+The row or column index of a table key or field can be queried with the method \methodlink[0]{table}{find}. 
+If the key or field does not exist, returns an error.
 
 \begin{syntax}
-\method{table}{rid} \$key 
-\end{syntax}
-\begin{syntax}
-\method{table}{cid} \$field 
+\method{table}{find} key \$key \\
+\$tableObj find field \$field
 \end{syntax}
 \begin{args}
 \$key & Key to find. \\
@@ -287,11 +225,13 @@ If the key or field does not exist, returns -1.
 
 \begin{example}{Find column index of a field}
 \begin{lstlisting}
-puts [$tableObj cid y]
+puts [$tableObj exists field z]
+puts [$tableObj find field z]
 \end{lstlisting}
 \tcblower
 \begin{lstlisting}
 1
+2
 \end{lstlisting}
 \end{example}
 
@@ -318,8 +258,9 @@ Note that multiple field-value pairings can be used in \methodlink{table}{set}.
 
 \begin{example}{Setting multiple values}
 \begin{lstlisting}
-$tableObj set 1 x 2.00 y 5.00 foo bar
-puts [$tableObj data 1]
+$tableObj --> tableCopy
+$tableCopy set 1 x 2.00 y 5.00 foo bar
+puts [$tableCopy data 1]
 \end{lstlisting}
 \tcblower
 \begin{lstlisting}
@@ -362,10 +303,10 @@ If entry list is blank, it will delete the column, but not the field.
 The methods \methodlink[0]{table}{mset} and \methodlink[0]{table}{mget} allow for easy matrix-style entry and access.
 Entry matrix size must match table size or be scalar.
 \begin{syntax}
-\method{table}{mset} <\$keys \$fields> \$matrix 
+\method{table}{mset} \$keys \$fields \$matrix 
 \end{syntax}
 \begin{syntax}
-\method{table}{mget} <\$keys \$fields> <\$filler>
+\method{table}{mget} \$keys \$fields <\$filler>
 \end{syntax}
 \begin{args}
 \$keys & List of keys to set/get (default all keys). \\
@@ -373,6 +314,21 @@ Entry matrix size must match table size or be scalar.
 \$matrix & Matrix of values (or scalar) to set. \\
 \$filler & Filler for missing values. Default blank. 
 \end{args}
+
+\begin{example}{Matrix entry and access}
+\begin{lstlisting}
+::taboo::table new T
+$T add keys 1 2 3 4
+$T add fields A B
+$T mset [$T keys] [$T fields] 0.0; # Initialize as zero
+$T mset [$T keys 0:2] A {1.0 2.0 3.0}; # Set subset of table
+puts [$T values]
+\end{lstlisting}
+\tcblower
+\begin{lstlisting}
+{1.0 0.0} {2.0 0.0} {3.0 0.0} {0.0 0.0}
+\end{lstlisting}
+\end{example}
 
 \clearpage
 
@@ -389,13 +345,14 @@ Unsetting a field variable or setting its value to blank unsets the correspondin
 \end{args}
 \begin{example}{Iterating over a table, accessing and modifying field values}
 \begin{lstlisting}
+$tableObj --> tableCopy
 set a 20.0
-$tableObj add fields q
-$tableObj with {
+$tableCopy add fields q
+$tableCopy with {
     puts [list $key $x]; # access key and field value
     set q [expr {$x*2 + $a}]; # modify field value
 }
-puts [$tableObj cget q]
+puts [$tableCopy cget q]
 \end{lstlisting}
 \tcblower
 \begin{lstlisting}
@@ -432,11 +389,12 @@ If any of the referenced fields are blank, the corresponding entry will be blank
 \end{args}
 \begin{example}{Using field expressions}
 \begin{lstlisting}
+$tableObj --> tableCopy
 set a 20.0
-puts [$tableObj cget x]
-puts [$tableObj expr {@x*2 + $a}]
-$tableObj fedit q {@x*2 + $a}
-puts [$tableObj cget q]
+puts [$tableCopy cget x]
+puts [$tableCopy expr {@x*2 + $a}]
+$tableCopy fedit q {@x*2 + $a}
+puts [$tableCopy cget q]
 \end{lstlisting}
 \tcblower
 \begin{lstlisting}
@@ -474,8 +432,9 @@ The method \methodlink[0]{table}{filter} filters a table to the keys matching cr
 \end{args}
 \begin{example}{Filtering table to only include keys that match criteria}
 \begin{lstlisting}
-$tableObj filter {@x > 3.0 && @y > 7.0}
-puts [$tableObj keys]
+$tableObj --> tableCopy
+$tableCopy filter {@x > 3.0 && @y > 7.0}
+puts [$tableCopy keys]
 \end{lstlisting}
 \tcblower
 \begin{lstlisting}
@@ -492,10 +451,10 @@ This search behavior can be changed with the various options, which are taken di
 Therefore, while brief descriptions of the options are provided here, they are explained more in depth in the Tcl documentation, with the exception of the -inline option.
 The -inline option filters a table based on the search criteria.
 \begin{syntax}
-\method{table}{search} <\$option1 \$option2 ...> <\$field> \$value
+\method{table}{search} <\$option ...> <\$field> \$value
 \end{syntax}
 \begin{args}
-\$option1 \$option2 ... & Searching options. Valid options: \\
+\$option ... & Searching options. Valid options: \\
 \quad -exact & \quad Compare strings exactly \\
 \quad -glob & \quad Use glob-style pattern matching (default) \\
 \quad -regexp & \quad Use regular expression matching \\
@@ -524,10 +483,10 @@ This sorting behavior can be changed with the various options, which are taken d
 Therefore, while brief descriptions of the options are provided here, they are explained more in depth in the Tcl documentation.
 Note: If a field contains missing values, the missing values will be last, regardless of sorting options. 
 \begin{syntax}
-\method{table}{sort} <\$option1 \$option2 ...> <\$field1 \$field2 ...>
+\method{table}{sort} <\$option ...> <\$field ...>
 \end{syntax}
 \begin{args}
-\$option1 \$option2 ... & Sorting options. Valid options: \\
+\$option ... & Sorting options. Valid options: \\
 \quad -ascii & \quad Use string comparison (default) \\
 \quad -dictionary & \quad Use dictionary-style comparison \\
 \quad -integer & \quad Use integer comparison \\
@@ -536,15 +495,16 @@ Note: If a field contains missing values, the missing values will be last, regar
 \quad -decreasing & \quad Sort the list in decreasing order \\
 \quad -nocase & \quad Compare in a case-insensitive manner \\
 \quad -{}- & \quad Signals end of options \\
-\$field1 \$field2 ...  & Fields to sort by (in order of sorting). If blank, sorts by keys.
+\$field ...  & Fields to sort by (in order of sorting). If blank, sorts by keys.
 \end{args}
 \begin{example}{Searching and sorting}
 \begin{lstlisting}
-puts [$tableObj search -real x 8.25]; # returns first matching key
-$tableObj sort -real x
-puts [$tableObj keys]
-puts [$tableObj cget x]; # table access reflects sorted keys
-puts [$tableObj search -sorted -bisect -real x 5.0]
+$tableObj --> tableCopy
+puts [$tableCopy search -real x 8.25]; # returns first matching key
+$tableCopy sort -real x
+puts [$tableCopy keys]
+puts [$tableCopy cget x]; # table access reflects sorted keys
+puts [$tableCopy search -sorted -bisect -real x 5.0]
 \end{lstlisting}
 \tcblower
 \begin{lstlisting}
@@ -562,88 +522,141 @@ If the merge is valid, the table data is combined, with later entries taking pre
 Additionally, the keys and fields are combined, such that if a key appears in any of the tables, it is in the combined table.
 
 \begin{syntax}
-\method{table}{merge} \$arg1 \$arg2 ...
+\method{table}{merge} \$object ...
 \end{syntax}
 \begin{args}
-\$arg1 \$arg2 ... & Other table objects to merge into table. Does not destroy the input tables. 
+\$object ... & Other table objects to merge into table. Does not destroy the input tables. 
 \end{args}
 
 \begin{example}{Merging data from other tables}
 \begin{lstlisting}
-set newTable [table new]
+$tableObj --> tableCopy
+::taboo::table new newTable
 $newTable set 1 x 5.00 q 6.34
-$tableObj merge $newTable
-$newTable destroy; # clean up
-puts [$tableObj properties]
+$tableCopy merge $newTable
+$tableCopy print
 \end{lstlisting}
 \tcblower
 \begin{lstlisting}
-keyname key fieldname field keys {1 2 3 4 5} fields {x y z q} data {1 {x 5.00 y 7.11 z 8.67 q 6.34} 2 {x 4.61 y 1.81 z 7.63} 3 {x 8.25 y 7.56 z 3.84} 4 {x 5.20 y 6.78 z 1.11} 5 {x 3.26 y 9.92 z 4.56}}
+key {1 2 3 4 5} x {5.00 4.61 8.25 5.20 3.26} y {7.11 1.81 7.56 6.78 9.92} z {8.67 7.63 3.84 1.11 4.56} q {6.34 {} {} {} {}}
 \end{lstlisting}
 \end{example}
 \clearpage
 \section{Table Manipulation}
 The following methods are useful for adding, removing, and rearranging rows and columns in a table.
-With the exception of \methodlink{table}{remove}, which removes corresponding data, and \methodlink{table}{mkkey}, which may cause data loss, these methods do not add or remove data, they only modify the key and field lists. 
 
-\subsection{Adding Keys/Fields}
-The method \methodlink[0]{table}{add} adds keys or fields to a table, appending to the end of the key/field lists. If a key or field already exists it is ignored.
-
+\subsection{Overwriting Keys/Fields}
+The method \methodlink[0]{table}{define} overwrites the keys and fields of the table, filtering the data or adding keys and fields as necessary. 
+For example, if the keys are defined to be a subset of the current keys, it will filter the data to only include the key subset. 
 \begin{syntax}
-\method{table}{add} keys \$arg1 \$arg1 ... \\
-\$tableObj add fields \$field1 \$field2 ...
+\method{table}{define} keys \$keys \\
+\$tableObj define fields \$fields
 \end{syntax}
 \begin{args}
-\$key1 \$key2 ... & Keys to add. \\
-\$field1 \$field2 ... & Fields to add.
+\$keys & Unique list of keys. \\
+\$fields & Unique list of fields.
 \end{args}
 
-\subsection{Removing Keys/Fields}
+\subsection{Adding or Removing Keys/Fields}
+The method \methodlink[0]{table}{add} adds keys or fields to a table, appending to the end of the key/field lists. 
+If a key or field already exists it is ignored.
 The method  \methodlink[0]{table}{remove} removes keys or fields and their corresponding rows and columns from a table. If a key or field does not exist, it is ignored. 
-
 \begin{syntax}
-\method{table}{remove} keys \$key1 \$key2 ... \\
-\$tableObj remove fields \$field1 \$field2 ...
+\method{table}{add} keys \$key ... \\
+\$tableObj add fields \$field ...
+\end{syntax}
+\begin{syntax}
+\method{table}{remove} keys \$key ... \\
+\$tableObj remove fields \$field ...
 \end{syntax}
 \begin{args}
-\$key1 \$key2 ... & Keys to remove. \\
-\$field1 \$field2 ... & Fields to remove.
+\$key ... & Keys to add/remove. \\
+\$field ... & Fields to add/remove.
 \end{args}
-
-\subsection{Cleaning a Table}
-Keys and fields with no data are removed with the method \methodlink[0]{table}{clean}. 
-\begin{syntax}
-\method{table}{clean}
-\end{syntax}
-
 \clearpage
-\subsection{Inserting Keys/Fields}
-The method  \methodlink[0]{table}{insert} inserts keys or fields at a specific row or column index. Input keys or fields must be unique and must not already exist. 
 
+
+\subsection{Inserting Keys/Fields}
+The method  \methodlink[0]{table}{insert} inserts keys or fields at a specific row or column index. 
+Input keys or fields must be unique and must not already exist. 
 \begin{syntax}
-\method{table}{insert} keys \$rid \$key1 \$key2 ... \\
-\$tableObj insert fields \$cid \$field1 \$field2 ...
+\method{table}{insert} keys \$index \$key ... \\
+\$tableObj insert fields \$index \$field ...
 \end{syntax}
 \begin{args}
-\$rid & Row index to insert keys at. \\
-\$key1 \$key2 ... & Keys to remove. \\
-\$cid & Column index to insert fields at. \\
-\$field1 \$field2 ... & Fields to remove.
+\$index & Row/column index to insert at. \\
+\$key ... & Keys to insert. \\
+\$field ... & Fields to insert.
 \end{args}
 
 \subsection{Renaming Keys/Fields}
-The method  \methodlink[0]{table}{rename} renames keys or fields. Old keys and fields must exist. Duplicates are not allowed in old and new key/field lists.
+The method  \methodlink[0]{table}{rename} renames keys or fields. 
+Old keys and fields must exist. 
+Duplicates are not allowed in old and new key/field lists.
 
 \begin{syntax}
-\method{table}{rename} keys \$oldKeys \$newKeys \\
-\$tableObj rename fields \$oldFields \$newFields
+\method{table}{rename} keys \$old \$new \\
+\$tableObj rename fields \$old \$new
 \end{syntax}
 \begin{args}
-\$oldKeys & Keys to rename. Must exist. \\
-\$newKeys & New key names. Must be same length as \$oldKeys. \\
-\$oldFields & Fields to rename. Must exist. \\
-\$newFields & New field names. Must be same length as \$oldFields.
+\$old & Keys/fields to rename. Must exist. \\
+\$new & New keys/fields. Must be same length as \$old. 
 \end{args}
+
+\begin{example}{Renaming fields}
+\begin{lstlisting}
+$tableObj --> tableCopy
+$tableCopy rename fields [string toupper [$tableCopy fields]]
+puts [$tableObj fields]
+puts [$tableCopy fields]
+\end{lstlisting}
+\tcblower
+\begin{lstlisting}
+x y z
+X Y Z
+\end{lstlisting}
+\end{example}
+
+\clearpage
+
+\subsection{Moving Keys/Fields}
+Existing keys and fields can be moved with the method \methodlink[0]{table}{move}.
+\begin{syntax}
+\method{table}{move} key \$key \$index \\
+\$tableObj move field \$field \$index
+\end{syntax}
+\begin{args}
+\$key & Key to move. \\
+\$field & Field to move. \\
+\$index & Row/column index to move to. \\
+\end{args}
+
+\subsection{Swapping Keys/Fields}
+Existing keys and fields can be swapped with the method \methodlink[0]{table}{swap}.
+To swap the a field column with the key column, use the method \methodlink[0]{table}{mkkey}.
+
+\begin{syntax}
+\method{table}{swap} keys \$key1 \$key2 \\
+\$tableObj swap fields \$field1 \$field2
+\end{syntax}
+\begin{args}
+\$key1 \$key2 & Keys to swap. \\
+\$field1 \$field2 & Fields to swap.
+\end{args}
+
+\begin{example}{Swapping table rows}
+\begin{lstlisting}
+$tableObj --> tableCopy
+$tableCopy swap keys 1 4
+$tableCopy print
+\end{lstlisting}
+\tcblower
+\begin{lstlisting}
+key {4 2 3 1 5} x {5.20 4.61 8.25 3.44 3.26} y {6.78 1.81 7.56 7.11 9.92} z {1.11 7.63 3.84 8.67 4.56}
+\end{lstlisting}
+\end{example}
+
+\clearpage
 
 \subsection{Making a Field the Key of a Table}
 The method \methodlink[0]{table}{mkkey} makes a field the key of a table, and makes the key a field. 
@@ -657,36 +670,6 @@ This method is intended to be used with a field that is full and unique, and if 
 \$field & Field to swap with key.
 \end{args}
 
-\subsection{Swapping Rows/Columns}
-Existing rows and columns can be swapped with the methods \methodlink[0]{table}{rswap} and \methodlink[0]{table}{cswap}.
-
-\begin{syntax}
-\method{table}{rswap} \$key1 \$key2
-\end{syntax}
-\begin{syntax}
-\method{table}{cswap} \$field1 \$field2
-\end{syntax}
-\begin{args}
-\$key1 \$key2 ... & Keys to swap. \\
-\$field1 \$field2 ... & Fields to swap.
-\end{args}
-
-\subsection{Moving Rows/Columns}
-Existing rows and columns can be moved with the methods \methodlink[0]{table}{rmove} and \methodlink[0]{table}{cmove}.
-
-\begin{syntax}
-\method{table}{rmove} \$key \$rid
-\end{syntax}
-\begin{syntax}
-\method{table}{cmove} \$field \$cid
-\end{syntax}
-\begin{args}
-\$key & Key of row to move. \\
-\$rid & Row index to move to. \\
-\$field & Field of row to move. \\
-\$cid & Column index to move to. \\
-\end{args}
-
 \subsection{Transposing a Table}
 The method \methodlink[0]{table}{transpose} transposes the table, making the keys the fields and the fields the keys.
 \begin{syntax}
@@ -695,12 +678,13 @@ The method \methodlink[0]{table}{transpose} transposes the table, making the key
 
 \begin{example}{Transposing a table}
 \begin{lstlisting}
-$tableObj transpose
-puts [$tableObj properties]
+$tableObj --> tableCopy
+$tableCopy transpose
+$tableCopy print
 \end{lstlisting}
 \tcblower
 \begin{lstlisting}
-keyname field fieldname key keys {x y z} fields {1 2 3 4 5} data {x {1 3.44 2 4.61 3 8.25 4 5.20 5 3.26} y {1 7.11 2 1.81 3 7.56 4 6.78 5 9.92} z {1 8.67 2 7.63 3 3.84 4 1.11 5 4.56}}
+key {x y z} 1 {3.44 7.11 8.67} 2 {4.61 1.81 7.63} 3 {8.25 7.56 3.84} 4 {5.20 6.78 1.11} 5 {3.26 9.92 4.56}
 \end{lstlisting}
 \end{example}
 {\normalsize\printindex}
