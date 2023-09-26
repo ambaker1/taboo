@@ -11,51 +11,14 @@ dict set config NDLIST_VERSION 0.1
 tin bake src build $config
 tin bake doc/template/version.tin doc/template/version.tex $config
 
+# Import 
 source build/taboo.tcl 
 namespace import taboo::*
-
-# add           # Add keys/fields to table
-# cget          # Get column of data
-# clean         # Clean table of keys/fields with no data
-# clear         # Clear table data, keeping field names
-# cset          # Set an entire column
-# data          # Get dictionary-style data of table
-# define        # Define table properties
-# exists        # Check if keys/fields/values exist
-# expr          # Perform column operation on table
-# fedit         # Create field with expr.
-# fields        # Get list of fields given column index and glob patterns 
-# filter        # Filter table given expr
-# find          # Get row/column ID given key/field
-# get           # Get single values from table
-# height        # Get height of table (number of keys)
-# insert        # Insert keys/fields into table
-# keyname       # Get keyname
-# keys          # Get list of keys given row index and glob patterns 
-# merge         # Merge table data into current table
-# mget          # Get matrix of data from table
-# mkkey         # Make a field the key
-# move          # Move rows/columns in table
-# mset          # Set a matrix of data in table
-# query         # Query keys that meet table expr.
-# remove        # Remove keys/fields from table
-# rename        # Rename keys/fields in table
-# rget          # Get row of data in table
-# rset          # Set rows of data in table
-# search        # Search for keys meeting lsearch criteria in table
-# set           # Set single values in table
-# sort          # Sort table using lsort
-# swap          # Swap rows/columns in table
-# transpose     # Transpose table
-# values        # Get table values
-# width         # Get width of table (number of fields)
-# wipe          # Wipe table (resets to fresh table)
-# with          # Loop through tabular data
 
 test new_table1 {
     # Blank table (exists, but empty)
 } -body {
-    ::taboo::table new tblObj
+    table new tblObj
     $tblObj info
 } -result {exists 1 height 0 type table value {key {}} width 0}
 
