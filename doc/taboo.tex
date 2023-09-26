@@ -68,6 +68,11 @@ table new tableObj {
     y {7.11 1.81 7.56 6.78 9.92}
     z {8.67 7.63 3.84 1.11 4.56}
 }
+puts [$tableObj]
+\end{lstlisting}
+\tcblower
+\begin{lstlisting}
+key {1 2 3 4 5} x {3.44 4.61 8.25 5.20 3.26} y {7.11 1.81 7.56 6.78 9.92} z {8.67 7.63 3.84 1.11 4.56}
 \end{lstlisting}
 \end{example}
 
@@ -113,11 +118,11 @@ Also note that ``taboo'' tables are always initialized, so the ``exists'' field 
 \begin{example}{Copying a table}
 \begin{lstlisting}
 $tableObj --> tableCopy
-$tableCopy print
+puts [$tableCopy info]
 \end{lstlisting}
 \tcblower
 \begin{lstlisting}
-key {1 2 3 4 5} x {3.44 4.61 8.25 5.20 3.26} y {7.11 1.81 7.56 6.78 9.92} z {8.67 7.63 3.84 1.11 4.56}
+exists 1 height 5 type table value {key {1 2 3 4 5} x {3.44 4.61 8.25 5.20 3.26} y {7.11 1.81 7.56 6.78 9.92} z {8.67 7.63 3.84 1.11 4.56}} width 3
 \end{lstlisting}
 \end{example}
 \clearpage

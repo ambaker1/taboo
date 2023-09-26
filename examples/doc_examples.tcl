@@ -8,10 +8,11 @@ table new tableObj {
     y {7.11 1.81 7.56 6.78 9.92}
     z {8.67 7.63 3.84 1.11 4.56}
 }
+puts [$tableObj]
 
 puts "Copying a table"
 $tableObj --> tableCopy
-$tableCopy print
+puts [$tableObj info]
 
 puts "Accessing table keys and table dimensions"
 puts [$tableObj keys]
