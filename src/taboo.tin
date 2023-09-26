@@ -1,7 +1,7 @@
 # taboo.tcl
 ################################################################################
 # Constant-time tabular data format, using TclOO and Tcl dictionaries.
-# Adds "table" datatype.
+# Adds "table" datatype using the "vutil::type" framework.
 
 # Copyright (C) 2023 Alex Baker, ambaker1@mtu.edu
 # All rights reserved. 
@@ -10,11 +10,14 @@
 # redistribution, and for a DISCLAIMER OF ALL WARRANTIES.
 ################################################################################
 
+# Required packages
 package require vutil @VUTIL_VERSION@; # For object variable framework
 package require ndlist @NDLIST_VERSION@; # For indexing
 
 # Create namespace
-namespace eval ::taboo {}
+namespace eval ::taboo {
+    namespace export table
+}
 
 # Definition of the table class and its methods:
 # Method        # Description
@@ -25,6 +28,7 @@ namespace eval ::taboo {}
 # clear         # Clear table data, keeping field names
 # cset          # Set an entire column
 # data          # Access raw data for table (dictionary form)
+# define        # Define the keys and fields of the table.
 # exists        # Check if keys/fields/values exist
 # expr          # Perform column operation on table
 # fedit         # Create field with expr.
@@ -56,6 +60,7 @@ namespace eval ::taboo {}
 # wipe          # Wipe table (resets to fresh table)
 # with          # Loop through tabular data
 
+# Define table type class
 ::vutil::type create table ::taboo::table {
 # Additional variables used in all methods
 variable keyname keys keymap fields fieldmap datamap
@@ -244,29 +249,36 @@ method keyname {{value ""}} {
 
 # $tblObj keys --
 # 
-# Access table keys with optional index pattern
+# Access table keys with optional ndlist index pattern
 #
 # Syntax:
 # $tblObj keys <$i>
 #
 # Arguments:
-# i:            ndlist index pattern. default ":"
+# i:            Index pattern. Default ":" for all keys
 
-method keys {{i :} {pattern *}} {
+method keys {{i :}} {
+    if {$i eq ":"} {
+        return $keys
+    }
     ::ndlist::nget $keys $i
 }
 
 # $tblObj fields --
 # 
-# Access table fields with optional index pattern
+# Access table fields with optional ndlist index pattern
 #
 # Syntax:
 # $tblObj fields <$j>
 # 
 # Arguments:
-# j:            ndlist index pattern. default ":"
+# j:            Index pattern. Default ":" for all fields
 
 method fields {{j :}} {
+    # Null case
+    if {$j eq ":"} {
+        return $fields
+    }
     ::ndlist::nget $fields $j
 }
 
@@ -292,7 +304,7 @@ method values {{filler ""}} {
 # $tblObj data <$key>
 #
 # Arguments:
-# key:          Key to get row data for
+# key:          Key to get row data for. Default returns double-nested dict.
 
 method data {args} {
     if {[llength $args] == 0} {
@@ -418,8 +430,8 @@ method find {type value} {
 #
 # Arguments:
 # key:          Row key
-# field:        Column field
-# value:        Value to set
+# field:        Column field(s)
+# value:        Value(s) to set
 
 method set {key args} {
     # Check arity
@@ -1196,9 +1208,13 @@ method add {option args} {
 #
 # Remove keys/fields if they exist. Handles duplicates just fine.
 #
+# Syntax:
+# $tblObj remove keys $key ...
+# $tblObj remove fields $field ...
+#
 # Arguments:
-# type:         "keys" or "fields"
-# value:        Keys or fields
+# key ...       Keys to insert
+# field ...     Fields to insert
 
 method remove {type args} {
     switch $type {
@@ -1283,10 +1299,14 @@ method remove {type args} {
 # 
 # Insert keys/fields (must be unique, and no duplicates)
 #
+# Syntax:
+# $tblObj insert keys $index $key ...
+# $tblObj insert fields $index $field ...
+#
 # Arguments:
-# type:         "keys" or "fields"
-# index:        Row or column ID (with end-integer notation)
-# args:         Keys or fields
+# index:        Row or column ID to insert at
+# key ...       Keys to insert
+# field ...     Fields to insert
 
 method insert {type index args} {
     switch $type {
@@ -1349,10 +1369,10 @@ method insert {type index args} {
 # Rename keys or fields in table
 #
 # Syntax:
-# $tblObj rename $type <$old> $new
+# $tblObj rename keys <$old> $new
+# $tblObj rename fields <$old> $new
 #
 # Arguments:
-# type:         "keys" or "fields"
 # old:          List of old keys/fields. Default existing keys/fields
 # new:          List of new keys/fields
 
@@ -1432,7 +1452,7 @@ method rename {type args} {
 
 # $tblObj mkkey --
 # 
-# Make a field the key. Field must be full and unique.
+# Make a field the key. Data loss may occur.
 #
 # Syntax:
 # $tblObj mkkey $field
@@ -1465,8 +1485,13 @@ method mkkey {field} {
 # Move row or column. Calls "MoveRow" and "MoveColumn"
 #
 # Syntax:
-# $tblObj move key $key $i
-# $tblObj move field $field $j
+# $tblObj move key $key $index
+# $tblObj move field $field $index
+#
+# Arguments:
+# key       Key of row to move
+# field     Field of column to move
+# index     Row or column ID to move to.
 
 method move {type args} {
     switch $type {
@@ -1568,6 +1593,10 @@ method MoveColumn {field j} {
 # Syntax:
 # $tblObj swap keys $key1 $key2 
 # $tblObj swap fields $field1 $field2 
+#
+# Arguments:
+# key1 key2:        Keys to swap
+# field1 field2:    Fields to swap
 
 method swap {type args} {
     switch $type {
@@ -1594,8 +1623,8 @@ method swap {type args} {
 # my SwapRows $key1 $key2
 #
 # Arguments:
-# key1:         Key 1
-# key2:         Key 2
+# key1:         Key to swap with key2
+# key2:         Key to swap with key1
 
 method SwapRows {key1 key2} {
     # Check existence of keys
@@ -1624,8 +1653,8 @@ method SwapRows {key1 key2} {
 # my SwapColumns $field1 $field2
 #
 # Arguments:
-# field1:           Field 1
-# field2:           Field 2
+# field1:       Field to swap with field2
+# field2:       Field to swap with field1
 
 method SwapColumns {field1 field2} {
     # Check existence of fields
