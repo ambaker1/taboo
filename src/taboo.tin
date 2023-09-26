@@ -45,11 +45,9 @@ namespace eval ::taboo {}
 # remove        # Remove keys/fields from table
 # rename        # Rename keys/fields in table
 # rget          # Get row of data in table
-# rid           # Get row index given key
 # rset          # Set rows of data in table
 # search        # Search for keys meeting lsearch criteria in table
 # set           # Set single values in table
-# shape         # Get shape of table
 # sort          # Sort table using lsort
 # swap          # Swap rows/columns
 # transpose     # Transpose table
@@ -65,7 +63,7 @@ variable keyname keys keymap fields fieldmap datamap
 # new table $refName <$value>
 # 
 # Modify to call define instead of "SetValue"
-# Table always exists, but may be empty (shape 0 0)
+# Table always exists, but may be empty (height 0 width 0)
 
 constructor {refName {value ""}} {
     my wipe; # initialize internal variables
@@ -114,17 +112,18 @@ method SetObject {objName} {
 # Modify to set the value field to result of GetValue method
 
 method GetObject {} {
-    set info [next]; # Get info dictionary
-    dict set info value [my GetValue]; # 
+    set info [next]; # Get info dictionary from superclass method
+    dict set info value [my GetValue]
     return $info
 }
 
 # UpdateFields --
 # 
-# Modify to update the shape field
+# Modify to update the height and width fields
 
 method UpdateFields {} {
-    set (shape) [my shape]
+    set (height) [my height]
+    set (width) [my width]
     next
 }
 
@@ -311,33 +310,6 @@ method data {args} {
     }
 }
 
-# $tblObj shape --
-#
-# Get shape of table (number of keys and fields)
-#
-# Syntax:
-# $tblObj shape <$dim>
-#
-# Arguments:
-# dim:          0 for height, 1 for width, "" for list of height and width
-
-method shape {{dim ""}} {
-    switch $dim {
-        "" { # $tblObj shape
-            return [list [my height] [my width]]
-        }
-        0 { # $tblObj shape 0
-            return [my height]
-        }
-        1 { # $tblObj shape 1
-            return [my width]
-        }
-        default {
-            return -code error "dim must be blank, 0, or 1"
-        }
-    }
-}
-
 # $tblObj height --
 #
 # Number of keys in table
@@ -399,7 +371,7 @@ method exists {type args} {
 
 # $tblObj find --
 #
-# Find index of key/field. Calls RowID and ColumnID
+# Find index of key/field.
 #
 # Syntax:
 # $tblObj find key $key
@@ -442,21 +414,20 @@ method find {type value} {
 # Allows for multiple value inputs for record-style entry
 #
 # Syntax:
-# $tblObj set $key $field $value <$field $value ...>; # odd number
+# $tblObj set $key $field $value ...
 #
 # Arguments:
 # key:          Row key
 # field:        Column field
 # value:        Value to set
 
-method set {args} {
+method set {key args} {
     # Check arity
-    if {[llength $args] < 3 || [llength $args] % 2 == 0} {
+    if {[llength $args] % 2} {
         # Default syntax
         return -code error "wrong # args: should be \"[self] set key field\
                 value ?field value ...?\""
     }
-    set args [lassign $args key]
     # Add keys and fields
     my add keys $key
     my add fields {*}[dict keys $args]
@@ -486,7 +457,7 @@ method set {args} {
 
 method rset {key row} {
     # Get input and target dimensions and check for error
-    set m0 [llength $fields]
+    set m0 [my width]
     set m1 [llength $row]
     if {$m1 == 0} {
         set type blank
@@ -544,7 +515,7 @@ method rset {key row} {
 
 method cset {field column} {
     # Get source and input dimensions and get input type
-    set n0 [llength $keys]
+    set n0 [my height]
     set n1 [llength $column]
     if {$n1 == 0} {
         set type blank
@@ -1037,7 +1008,6 @@ method sort {args} {
 # Loops through table (row-wise), using dict with on the table data.
 # Missing data is represented by blanks. Setting a field to blank or 
 # unsetting the variable will unset the data.
-# Uses blank array to pass values
 
 # Syntax:
 # $tblObj with $body 
@@ -1046,9 +1016,9 @@ method sort {args} {
 # Arguments:
 # body:         Body to evaluate
 
-# set T [tbl new -keys {x y}]
+# new table T {key {x y}}
 # $T cset y {1 2 3}
-# $T with {set (x) [expr {$(y) + 2}]}
+# $T with {set x [expr {$y + 2}]}
 
 method with {body} {
     variable temp; # Temporary variable for dict with loop
@@ -1074,10 +1044,12 @@ method with {body} {
 # $tblObj merge --
 # 
 # Add table data from other tables, merging the data. 
-# keyname must be consistent to merge.
+# Keynames must be consistent to merge.
+#
+# $tblObj merge $object ...
 # 
 # Arguments:
-# args:         Tables to merge into main table
+# object ...    Tables to merge into main table
 
 method merge {args} {
     # Check compatibility
@@ -1120,6 +1092,7 @@ method merge {args} {
 method define {type value} {
     switch $type {
         keys { # $tblObj define keys $keys
+            # Check uniqueness
             if {![my IsUniqueList $value]} {
                 return -code error "keys must be unique"
             }
@@ -1135,6 +1108,7 @@ method define {type value} {
             }
         }
         fields { # $tblObj define fields $fields
+            # Check uniqueness
             if {![my IsUniqueList $value]} {
                 return -code error "fields must be unique"
             }
@@ -1185,7 +1159,7 @@ method add {option args} {
                 }
                 # Check if key is new
                 if {![dict exists $keymap $key]} {
-                    dict set keymap $key [llength $keys]
+                    dict set keymap $key [my height]
                     lappend keys $key
                 }
                 # Ensure that data entries exist
@@ -1204,7 +1178,7 @@ method add {option args} {
                 }
                 # Check if field is new
                 if {![dict exists $fieldmap $field]} {
-                    dict set fieldmap $field [llength $fields]
+                    dict set fieldmap $field [my width]
                     lappend fields $field
                 }
             }
@@ -1327,7 +1301,7 @@ method insert {type index args} {
                 }
             }
             # Convert index input to integer
-            set i [::ndlist::Index2Integer $index [llength $keys]]
+            set i [::ndlist::Index2Integer $index [my height]]
             # Insert keys (using k-trick for performance)
             set keys [linsert $keys[set keys ""] $i {*}$args]
             # Update indices in key map
@@ -1353,7 +1327,7 @@ method insert {type index args} {
                 }
             }
             # Convert index input to integer
-            set j [::ndlist::Index2Integer $index [llength $fields]]
+            set j [::ndlist::Index2Integer $index [my width]]
             # Insert fields (using k-trick for performance)
             set fields [linsert $fields[set fields ""] $j {*}$args]
             # Update indices in field map
@@ -1631,13 +1605,13 @@ method SwapRows {key1 key2} {
         }
     }
     # Get row IDs
-    set rid1 [dict get $keymap $key1]
-    set rid2 [dict get $keymap $key2]
+    set i1 [dict get $keymap $key1]
+    set i2 [dict get $keymap $key2]
     # Update key list and map
-    lset keys $rid2 $key1
-    lset keys $rid1 $key2
-    dict set keymap $key1 $rid2
-    dict set keymap $key2 $rid1
+    lset keys $i2 $key1
+    lset keys $i1 $key2
+    dict set keymap $key1 $i2
+    dict set keymap $key2 $i1
     # Return object name
     return [self]
 }
@@ -1661,13 +1635,13 @@ method SwapColumns {field1 field2} {
         }
     }
     # Get column IDs
-    set cid1 [dict get $fieldmap $field1]
-    set cid2 [dict get $fieldmap $field2]
+    set j1 [dict get $fieldmap $field1]
+    set j2 [dict get $fieldmap $field2]
     # Update field list and map
-    lset fields $cid2 $field1
-    lset fields $cid1 $field2
-    dict set fieldmap $field1 $cid2
-    dict set fieldmap $field2 $cid1
+    lset fields $j2 $field1
+    lset fields $j1 $field2
+    dict set fieldmap $field1 $j2
+    dict set fieldmap $field2 $j1
     # Return object name
     return [self]
 }
@@ -1678,7 +1652,7 @@ method SwapColumns {field1 field2} {
 
 method transpose {} {
     # Verify that transpose is allowed
-    if {$keyname in $keys} {
+    if {[my exists key $keyname]} {
         return -code error "cannot transpose: keyname in keys"
     }
     # Initialize transpose data
@@ -1697,7 +1671,7 @@ method transpose {} {
     set datamap $transpose
     # Return object name
     return [self]
-}    
+}
 
 # $tblObj clean --
 #
@@ -1705,16 +1679,14 @@ method transpose {} {
 
 method clean {} {
     # Remove blank keys
-    set blankKeys ""
-    foreach key $keys {
-        if {[dict size [dict get $datamap $key]] == 0} {
-            lappend blankKeys $key
+    my remove keys {*}[lmap key $keys {
+        if {[dict size [dict get $datamap $key]]} {
+            continue
         }
-    }
-    my remove keys {*}$blankKeys
+        set key
+    }]
     # Remove blank fields
-    set blankFields ""
-    foreach field $fields {
+    my remove fields {*}[lmap field $fields {
         set isBlank 1
         dict for {key rowmap} $datamap {
             if {[dict exists $rowmap $field]} {
@@ -1722,11 +1694,11 @@ method clean {} {
                 break
             }
         }
-        if {$isBlank} {
-            lappend blankFields $field
+        if {!$isBlank} {
+            continue
         }
-    }
-    my remove fields {*}$blankFields
+        set field
+    }]
     # Return object name
     return [self]
 }
