@@ -19,49 +19,33 @@ namespace eval ::taboo {
     namespace export table
 }
 
-# Definition of the table class and its methods:
-# Method        # Description
-################################################################################
-# add           # Add keys/fields to table
-# cget          # Get column of data
-# clean         # Clean table of keys/fields with no data
-# clear         # Clear table data, keeping field names
-# cset          # Set an entire column
-# data          # Access raw data for table (dictionary form)
-# define        # Define the keys and fields of the table.
-# exists        # Check if keys/fields/values exist
-# expr          # Perform column operation on table
-# fedit         # Create field with expr.
-# fields        # Get list of fields given column index
-# filter        # Filter table given expr
-# find          # Find the row/column index of a key/field
-# get           # Get single values from table
-# height        # Get height of table (number of keys)
-# insert        # Insert keys/fields into table
-# keyname       # Get/modify keyname
-# keys          # Get list of keys given row index
-# merge         # Merge table data into current table
-# mget          # Get matrix of data from table
-# mkkey         # Make a field the key
-# move          # Move rows/columns
-# mset          # Set a matrix of data in table
-# query         # Query keys that meet table expr
-# remove        # Remove keys/fields from table
-# rename        # Rename keys/fields in table
-# rget          # Get row of data in table
-# rset          # Set rows of data in table
-# search        # Search for keys meeting lsearch criteria in table
-# set           # Set single values in table
-# sort          # Sort table using lsort
-# swap          # Swap rows/columns
-# transpose     # Transpose table
-# values        # Get table values (matrix form)
-# width         # Get width of table (number of fields)
-# wipe          # Wipe table (resets to fresh table)
-# with          # Loop through tabular data
+# table --
+#
+# Create a table (calls ::taboo::tblobj)
+#
+# Syntax:
+# table $refName <$value>
+#
+# Arguments:
+# refName:      Variable name for garbage collection.
+# value:        Value of table.
 
-# Define table type class
-::vutil::type create table ::taboo::table {
+proc ::taboo::table {refName {value ""}} {
+    tailcall ::taboo::tblobj new $refName $value
+}
+
+# ::taboo::tblobj --
+#
+# Object variable class for tables. Not exported.
+#
+# Syntax:
+# ::vutil::new table $refName <$value>
+#
+# Arguments:
+# refName       Variable name for garbage collection
+# value         Value of table
+
+::vutil::type create table ::taboo::tblobj {
 # Additional variables used in all methods
 variable keyname keys keymap fields fieldmap datamap
 

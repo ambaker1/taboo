@@ -3,7 +3,7 @@ tin import assert from tin
 tin import tcltest
 tin import flytrap
 tin import new from vutil
-set version 0.1
+set version 0.2
 set config ""
 dict set config VERSION $version
 dict set config VUTIL_VERSION 1.1.1
@@ -18,7 +18,7 @@ namespace import taboo::*
 test new_table1 {
     # Blank table (exists, but empty)
 } -body {
-    table new tblObj
+    table tblObj
     $tblObj info
 } -result {exists 1 height 0 type table value {key {}} width 0}
 
@@ -38,11 +38,11 @@ test new_table2 {
 test copy_table_gc {
     # Test the copy functionality, and garbage collection
 } -body {
-    assert [llength [info class instances ::taboo::table]] == 1
+    assert [llength [info class instances ::taboo::tblobj]] == 1
     $tblObj --> tblCopy
-    assert [llength [info class instances ::taboo::table]] == 2
+    assert [llength [info class instances ::taboo::tblobj]] == 2
     $tblObj --> tblCopy; # twice
-    assert [llength [info class instances ::taboo::table]] == 2
+    assert [llength [info class instances ::taboo::tblobj]] == 2
     $tblCopy info
 } -result [$tblObj info]
 

@@ -2,7 +2,7 @@ package require tin
 tin import taboo
 
 puts "Example table"
-table new tableObj {
+table tableObj {
     key {1 2 3 4 5} 
     x {3.44 4.61 8.25 5.20 3.26}
     y {7.11 1.81 7.56 6.78 9.92}
@@ -77,7 +77,7 @@ puts [$tableCopy search -sorted -bisect -real x 5.0]
 
 puts "Merging data from other tables"
 $tableObj --> tableCopy
-table new newTable
+table newTable
 $newTable set 1 x 5.00 q 6.34
 $tableCopy merge $newTable
 $tableCopy print

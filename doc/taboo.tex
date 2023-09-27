@@ -47,11 +47,10 @@ key {1 2 3} A {5.6 {} 2.22} B {{hello world} 4.5 foo}
 
 \clearpage
 \section{Creating Table Objects}
-This package provides the \cmdlink{table} class, using the type system provided by the ``vutil'' package. 
-So, tables can also be created with the \texttt{::vutil::new} command.
+This package provides the ``table'' type class, using the type system provided by the ``vutil'' package. 
+The command \cmdlink{table} creates a new table object variable, which uses the class \texttt{::taboo::tblobj}.
 \begin{syntax}
-\command{table} new \$refName <\$value> \\
-::vutil::new table \$refName <\$value>
+\command{table} \$refName <\$value>
 \end{syntax}
 \begin{args}
 \$refName & Reference name to tie object to. \\
@@ -62,7 +61,7 @@ Below is the example table used in the remainder of the documentation examples.
 Note that this format is also compatible with the string representation of Tcl arrays and dictionaries.
 \begin{example}{Example table}
 \begin{lstlisting}
-table new tableObj {
+table tableObj {
     key {1 2 3 4 5} 
     x {3.44 4.61 8.25 5.20 3.26}
     y {7.11 1.81 7.56 6.78 9.92}
@@ -537,7 +536,7 @@ Additionally, the keys and fields are combined, such that if a key appears in an
 \begin{example}{Merging data from other tables}
 \begin{lstlisting}
 $tableObj --> tableCopy
-table new newTable
+table newTable
 $newTable set 1 x 5.00 q 6.34
 $tableCopy merge $newTable
 $tableCopy print
