@@ -3,7 +3,7 @@ tin import assert from tin
 tin import tcltest
 tin import flytrap
 tin import new from vutil
-set version 0.2
+set version 0.2.1
 set config ""
 dict set config VERSION $version
 dict set config VUTIL_VERSION 1.1.1

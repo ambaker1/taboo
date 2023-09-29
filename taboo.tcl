@@ -1719,4 +1719,4 @@ method clean {} {
 
 
 # Finally, provide the package
-package provide taboo 0.2
+package provide taboo 0.2.1
